@@ -2,10 +2,35 @@
  * Ponto de entrada: cria a tela, o jogo e o laço com passo fixo.
  */
 import './estilos/base.css';
-import { PASSO_FIXO } from './configuracao';
+import { CHAVE_SALVAMENTO, PASSO_FIXO } from './configuracao';
 import { instalarApiTeste } from './depuracao/api-teste';
 import { JogoCentelha } from './jogo/jogo';
 import { Tela } from './motor/tela';
+
+/** Gancho de atualização ao vivo da página publicada (ausente fora dela). */
+interface GanchoAtualizacao {
+  data?: { salvamento?: string };
+  ready?: (iniciar: (dados: { salvamento?: string }) => void) => void;
+  snapshot?: (obter: () => unknown) => void;
+}
+
+function ganchoAtualizacao(): GanchoAtualizacao | undefined {
+  try {
+    return (window as unknown as { claude?: { hot?: GanchoAtualizacao } }).claude?.hot;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Restaura o salvamento entregue por uma atualização da página publicada. */
+function restaurarDeAtualizacao(dados: { salvamento?: string } | undefined): void {
+  if (!dados?.salvamento) return;
+  try {
+    window.localStorage.setItem(CHAVE_SALVAMENTO, dados.salvamento);
+  } catch {
+    /* sem armazenamento: segue sem restaurar */
+  }
+}
 
 async function iniciar(): Promise<void> {
   const canvas = document.getElementById('tela-jogo') as HTMLCanvasElement;
@@ -48,6 +73,23 @@ async function iniciar(): Promise<void> {
     }
   });
   window.addEventListener('pagehide', () => jogo.salvar());
+  ganchoAtualizacao()?.snapshot?.(() => {
+    jogo.salvar();
+    try {
+      return { salvamento: window.localStorage.getItem(CHAVE_SALVAMENTO) ?? undefined };
+    } catch {
+      return {};
+    }
+  });
 }
 
-void iniciar();
+const gancho = ganchoAtualizacao();
+if (gancho?.ready) {
+  gancho.ready((dados) => {
+    restaurarDeAtualizacao(dados);
+    void iniciar();
+  });
+} else {
+  restaurarDeAtualizacao(gancho?.data);
+  void iniciar();
+}
