@@ -1,0 +1,4 @@
+node_modules
+dist
+testes/e2e/saida
+*.log
