@@ -201,3 +201,15 @@ Duração-alvo da primeira partida: 12–18 min de jogo ativo (mínimo 10).
 | 12–14 | Subida do Farol |
 | 14–16 | Chefe O Rumor |
 | 16+ | Restauração do mundo, fronteira, atividades opcionais |
+
+## 12. Ajustes após a revisão crítica (prevalecem sobre as seções anteriores)
+
+- **Dano em meios corações:** Chiado, Eco e rajadas 0,5; pancada do Casco e onda 1; queda no vão 0,5 (0 em zona de enigma, nunca fatal). Sem dano por contato. Vida máxima 5; inspiração máxima 5.
+- **Armas:** Espada 34 px (3º golpe 1,5); Colher 36 px (projétil rebatido causa 2 e atordoa 1 s); Martelo dano 2 (×2 em escudo), arco 120°, onda só empurra.
+- **Habilidades:** Observar recarga 4 s; ponto fraco só em Casco e chefe (×2 por 3 s). Conectar: origem ≤ 7 blocos de Claude, destino ≤ 7 blocos da origem com linha de visão, prévia do fio. Choque atordoa 1,5 s e descarrega a fonte por 6 s; amarrar com recarga de 8 s. Criar: Ponte só com âncora a ≤ 1,5 bloco e de frente para o par; a ponte espera Claude sair (até +3 s); prévia do resultado no HUD.
+- **Enigmas:** receptores travam ao resolver; cadeias do caminho principal com no máximo 2 ligações; Pedra de Rascunho reinicia peças sem desfazer soluções; caixa volta à origem.
+- **Inspiração:** recarga 5 s fora de combate, 12 s em combate; ganhos parciais somam.
+- **Determinação:** só após queda, derrota ou sequência errada; no máximo a cada 30 s.
+- **Geometria:** vão de 1 bloco andando, 2 correndo; nada de vão de 3; Ponte de Luz para vãos ≥ 4.
+- **Ritmo:** Oficina enxuta (5 etapas, combate entre enigmas, Sopa de Ideias opcional); gaiolas do Vale ≤ 45 s cada; Pedras-Memória a cada ~3 min e no topo do Farol; fase do chefe salva.
+- **Ensino antes da combinação:** anel do Casco ensina pular ondas; matilha do Vale ensina amarrar; runa isolada antes do enigma das três; primeiro Cortador perto de uma lâmpada.
