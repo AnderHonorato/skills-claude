@@ -3,12 +3,14 @@
  * Versão provisória do orquestrador: título, HUD textual e balões simples.
  */
 import type { ApiUi, Jogo } from '../contratos/jogo';
+import { instalarToqueProvisorio } from './toque-provisorio';
 
 export function criarUi(jogo: Jogo, raiz: HTMLElement): ApiUi {
   const hud = document.createElement('div');
   hud.className = 'hud-provisorio';
   raiz.appendChild(hud);
   let titulo: HTMLElement | null = null;
+  const toque = instalarToqueProvisorio(jogo, raiz);
   let mensagem = '';
   let mensagemRestante = 0;
 
@@ -24,6 +26,8 @@ export function criarUi(jogo: Jogo, raiz: HTMLElement): ApiUi {
       hud.textContent = `Vida ${j.vida}/${j.vidaMaxima} · Inspiração ${Math.floor(j.inspiracao)}/${j.inspiracaoMaxima} · ${j.armaAtual ?? 'sem arma'}${mensagemRestante > 0 ? ' · ' + mensagem : ''}`;
       if (jogo.entrada.apertou('pausa') && jogo.estado === 'jogando') jogo.estado = 'pausado';
       else if (jogo.entrada.apertou('pausa') && jogo.estado === 'pausado') jogo.estado = 'jogando';
+      if (jogo.estado === 'pausado') hud.textContent = 'Pausado — Esc ou o botão II para continuar';
+      toque.atualizar();
     },
     desenharTela(ctx) {
       ctx.font = '600 14px Fredoka, system-ui, sans-serif';
