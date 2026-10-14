@@ -173,6 +173,8 @@ export type EspecEntidade =
       aoResolver: Acao[];
       /** Dicas graduais (curtas) mostradas após tentativas ou tempo. */
       dicas: string[];
+      /** Pedra de Rascunho (reinicia as peças do enigma) em blocos locais; padrão: canto da zona. */
+      reinicio?: Vetor;
     }
   | { tipo: 'decoracao'; modelo: string; x: number; y: number; solido?: boolean; escala?: number }
   | { tipo: 'placa'; id: string; x: number; y: number; texto: string }

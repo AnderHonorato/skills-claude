@@ -9,7 +9,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const entrada = readFileSync('dist/index.html', 'utf8');
 const cabeca = entrada.match(/<head>([\s\S]*?)<\/head>/i)?.[1] ?? '';
 const corpo = entrada.match(/<body>([\s\S]*?)<\/body>/i)?.[1] ?? '';
-const titulo = cabeca.match(/<title>[\s\S]*?<\/title>/i)?.[0] ?? '<title>Centelha das Ideias</title>';
+const titulo =
+  cabeca.match(/<title>[\s\S]*?<\/title>/i)?.[0] ?? '<title>Centelha das Ideias</title>';
 const semMetasRepetidas = cabeca
   .replace(/<meta charset[^>]*>/i, '')
   .replace(/<meta\s+name="viewport"[\s\S]*?\/>/i, '')

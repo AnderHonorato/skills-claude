@@ -279,6 +279,8 @@ export interface ApiHabilidades {
   dicaAtual(): string | null;
   /** Alvo que Conectar/Criar usaria agora (para destacar). */
   alvoSugerido(h: IdHabilidade): string | null;
+  /** Prévia do que Criar faria agora (ícone no HUD/botão), ou null se indisponível. */
+  previaCriar(): 'ponte' | 'escudo' | 'aliado' | null;
   desenharChao(ctx: CanvasRenderingContext2D): void;
   desenharSobre(ctx: CanvasRenderingContext2D): void;
   /** Fábricas de mecanismos, baús, santuários, gatilhos e zonas de enigma. */

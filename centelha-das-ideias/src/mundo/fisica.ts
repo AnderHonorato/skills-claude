@@ -51,7 +51,10 @@ export class FisicaJogo implements Fisica {
     }
     // Ajusta z para manter a altura absoluta sobre a nova superfície.
     const chao = this.mundo.temChao(e.x, e.y) ? this.mundo.alturaChaoEm(e.x, e.y) : 0;
-    if (movidoX !== 0 || movidoY !== 0) e.z = Math.max(0, alturaAbs - chao);
+    if (movidoX !== 0 || movidoY !== 0) {
+      // Sem chão embaixo (vão), z segue a altura absoluta, inclusive negativa: a queda continua.
+      e.z = this.mundo.temChao(e.x, e.y) ? Math.max(0, alturaAbs - chao) : alturaAbs;
+    }
     return { x: movidoX, y: movidoY };
   }
 

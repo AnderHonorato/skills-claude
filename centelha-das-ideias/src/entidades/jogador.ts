@@ -120,6 +120,19 @@ export class JogadorClaude implements Jogador {
     this.humorRestante = duracao;
   }
 
+  private ultimaDeterminacao = -999;
+
+  /**
+   * Determinação ("aprender com o erro"): recargas 25% mais rápidas por 10 s após falhar.
+   * No máximo uma vez a cada 30 s, para não virar recurso explorável.
+   */
+  ativarDeterminacao(forcar = false): void {
+    const agora = this.jogo.tempo;
+    if (!forcar && agora - this.ultimaDeterminacao < 30) return;
+    this.ultimaDeterminacao = agora;
+    this.determinacaoPor = 10;
+  }
+
   empurrar(vx: number, vy: number): void {
     this.empurraoX += vx;
     this.empurraoY += vy;
@@ -173,7 +186,7 @@ export class JogadorClaude implements Jogador {
     this.controleBloqueado = false;
     this.estado = 'repouso';
     this.invulneravelPor = 1.5;
-    this.determinacaoPor = 10;
+    this.ativarDeterminacao(true);
     this.humorEvento = null;
     this.animar('recuperacao', 0.6);
     this.definirHumorEvento('determinado', 4);
@@ -301,6 +314,7 @@ export class JogadorClaude implements Jogador {
       this.pular();
     }
     this.atualizarVertical(dt);
+    if ((this.estado as EstadoAnimClaude) === 'caindoNoVao') return;
 
     // ----- passos -----
     if (this.noChao && andou > 0.05) {
@@ -360,7 +374,7 @@ export class JogadorClaude implements Jogador {
       if (!temChao) {
         this.noChao = false;
         this.vz = 0;
-        this.coiote = JOGADOR.tempoCoiote;
+        this.coiote = this.tempoBeirada > 0.35 ? 0 : JOGADOR.tempoCoiote;
       } else if (this.z > 0.5) {
         this.noChao = false;
         this.vz = 0;
@@ -418,13 +432,21 @@ export class JogadorClaude implements Jogador {
       this.noChao = true;
       this.estado = 'repouso';
       this.tempoBeirada = 0;
-      this.vida = Math.max(1, this.vida - 1);
+      const emEnigma = (() => {
+        try {
+          return !!this.jogo.habilidades.enigmaAtual();
+        } catch {
+          return false;
+        }
+      })();
+      const dano = emEnigma ? 0 : JOGADOR.danoQueda;
+      this.vida = Math.max(Math.min(this.vida, 0.5), this.vida - dano);
       this.invulneravelPor = 1.2;
-      this.determinacaoPor = 10;
+      this.ativarDeterminacao();
       this.animar('recuperacao', 0.5);
       this.definirHumorEvento('determinado', 3);
       this.jogo.emitir('jogadorQueda', {});
-      this.jogo.emitir('jogadorFerido', { dano: 1, vida: this.vida });
+      if (dano > 0) this.jogo.emitir('jogadorFerido', { dano, vida: this.vida });
     }
   }
 
@@ -583,9 +605,11 @@ export class JogadorClaude implements Jogador {
       return;
     }
     this.acumuladorInspiracao += dt;
-    if (this.acumuladorInspiracao >= JOGADOR.recargaInspiracao) {
+    const emCombate = this.jogo.combate.intensidade() > 0.3;
+    const intervalo = emCombate ? JOGADOR.recargaInspiracao : JOGADOR.recargaInspiracaoForaCombate;
+    if (this.acumuladorInspiracao >= intervalo) {
       this.acumuladorInspiracao = 0;
-      this.inspiracao = Math.min(this.inspiracaoMaxima, Math.floor(this.inspiracao) + 1);
+      this.inspiracao = Math.min(this.inspiracaoMaxima, this.inspiracao + 1);
     }
   }
 

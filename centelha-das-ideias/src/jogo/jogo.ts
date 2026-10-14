@@ -1,6 +1,6 @@
 import { criarAudio } from '../audio/indice';
 import { efeito } from '../arte/efeitos';
-import { BLOCO, INTERVALO_AUTOSALVAR, PASSO_FIXO, RAIO_ATIVIDADE } from '../configuracao';
+import { BLOCO, INTERVALO_AUTOSALVAR, JOGADOR, PASSO_FIXO, RAIO_ATIVIDADE } from '../configuracao';
 import type { Luz } from '../contratos/arte';
 import type { IdSom } from '../contratos/audio';
 import type {
@@ -185,7 +185,7 @@ export class JogoCentelha implements Jogo {
     this.ouvir('missaoConcluida', alegria);
     const falha = () => {
       this.definirHumor('frustrado', 1.3);
-      this.jogador.determinacaoPor = 10;
+      this.jogador.ativarDeterminacao();
       setTimeout(() => {
         if (this.jogador.humor === 'frustrado') this.definirHumor('determinado', 3);
       }, 1300);
@@ -466,13 +466,16 @@ export class JogoCentelha implements Jogo {
         );
     }
     if (r.vidaMaxima) {
-      j.vidaMaxima = Math.min(6, j.vidaMaxima + r.vidaMaxima);
+      j.vidaMaxima = Math.min(JOGADOR.vidaMaxima, j.vidaMaxima + r.vidaMaxima);
       j.vida = Math.min(j.vidaMaxima, j.vida + r.vidaMaxima);
       partes.push('Coração extra!');
       this.audio.tocar('coracaoObtido');
     }
     if (r.inspiracaoMaxima) {
-      j.inspiracaoMaxima = Math.min(5, j.inspiracaoMaxima + r.inspiracaoMaxima);
+      j.inspiracaoMaxima = Math.min(
+        JOGADOR.inspiracaoMaxima,
+        j.inspiracaoMaxima + r.inspiracaoMaxima
+      );
       j.inspiracao = Math.min(j.inspiracaoMaxima, j.inspiracao + r.inspiracaoMaxima);
       partes.push('Inspiração máxima aumentou!');
     }

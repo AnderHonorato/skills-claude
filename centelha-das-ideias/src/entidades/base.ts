@@ -310,8 +310,9 @@ class PedraMemoria extends EntidadeSimples {
     if (Math.hypot(j.x - this.x, j.y - this.y) < 30) {
       this.espera = 4;
       const nova = !ativa;
-      if (nova || j.vida < j.vidaMaxima) {
+      if (nova || j.vida < j.vidaMaxima || (j.itens.caldo !== undefined && j.itens.caldo < 2)) {
         j.curar(j.vidaMaxima);
+        if (j.itens.caldo !== undefined && j.itens.caldo < 2) j.itens.caldo = 2;
         jogo.registrarCheckpoint(this.id, this.x, this.y + 20);
         jogo.audio.tocar('checkpoint');
         efeito(jogo.particulas, 'cura', this.x, this.y, { z: 16, intensidade: 1.4 });

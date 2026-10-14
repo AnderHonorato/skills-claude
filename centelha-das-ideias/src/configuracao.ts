@@ -24,7 +24,13 @@ export const JOGADOR = {
   invulneravelAposDano: 1.0,
   vidaInicial: 3,
   inspiracaoInicial: 3,
+  /** Segundos por carga de inspiração em combate / fora de combate. */
   recargaInspiracao: 12,
+  recargaInspiracaoForaCombate: 5,
+  /** Dano de queda no vão (meio coração; zero em zona de enigma). */
+  danoQueda: 0.5,
+  vidaMaxima: 5,
+  inspiracaoMaxima: 5,
   passada: 22,
   /** Velocidade de queda (px/s) a partir da qual a aterrissagem é "pesada". */
   quedaPesada: 320,

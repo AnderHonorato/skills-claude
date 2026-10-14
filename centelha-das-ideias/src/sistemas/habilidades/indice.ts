@@ -24,6 +24,7 @@ export function criarHabilidades(jogo: Jogo): ApiHabilidades {
     reiniciarEnigma() {},
     dicaAtual: () => null,
     alvoSugerido: () => null,
+    previaCriar: () => null,
     desenharChao() {},
     desenharSobre() {},
   };
