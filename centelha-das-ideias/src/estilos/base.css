@@ -321,7 +321,9 @@ body {
   text-align: center;
   font-size: 15px;
   animation: entrar 0.3s ease-out;
-  transition: opacity 0.4s, transform 0.4s;
+  transition:
+    opacity 0.4s,
+    transform 0.4s;
 }
 .mensagem.saindo {
   opacity: 0;
@@ -379,7 +381,9 @@ body {
   font-size: clamp(22px, 4vw, 38px);
   font-weight: 700;
   color: var(--marfim);
-  text-shadow: 0 3px 0 var(--ardosia), 0 0 18px rgba(0, 0, 0, 0.35);
+  text-shadow:
+    0 3px 0 var(--ardosia),
+    0 0 18px rgba(0, 0, 0, 0.35);
   opacity: 0;
   white-space: nowrap;
 }
@@ -414,7 +418,9 @@ body {
   font-size: 16px;
   font-weight: 600;
   opacity: 0;
-  transition: opacity 0.4s, transform 0.4s;
+  transition:
+    opacity 0.4s,
+    transform 0.4s;
 }
 .aviso-fronteira.mostrar {
   opacity: 1;
@@ -456,7 +462,9 @@ body {
   border-radius: 20px;
   background: rgba(253, 248, 238, 0.97);
   color: var(--ardosia);
-  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.18), 0 10px 40px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 6px 0 rgba(0, 0, 0, 0.18),
+    0 10px 40px rgba(0, 0, 0, 0.25);
   pointer-events: auto;
   animation: entrar 0.25s ease-out;
 }
@@ -537,7 +545,11 @@ body {
   padding: 16px;
 }
 .tela-titulo {
-  background: radial-gradient(ellipse at center, rgba(43, 37, 48, 0.1) 0%, rgba(43, 37, 48, 0.55) 100%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(43, 37, 48, 0.1) 0%,
+    rgba(43, 37, 48, 0.55) 100%
+  );
 }
 .titulo-logo {
   text-align: center;
@@ -763,8 +775,8 @@ body {
 }
 .toque-topo {
   position: absolute;
-  right: calc(var(--seguro-d) + 160px);
-  top: var(--seguro-c);
+  right: var(--seguro-d);
+  top: calc(var(--seguro-c) + 158px);
   display: flex;
   gap: 8px;
 }
@@ -792,7 +804,7 @@ body {
     height: 104px;
   }
   .toque-topo {
-    right: calc(var(--seguro-d) + 112px);
+    top: calc(var(--seguro-c) + 110px);
   }
   .hud-esquerda {
     max-width: 46vw;
