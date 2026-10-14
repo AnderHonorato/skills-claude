@@ -102,6 +102,20 @@ export type EspecEntidade =
       fixarAoRevelar?: boolean;
     }
   | { tipo: 'cristal'; id: string; x: number; y: number; alvos: string[] }
+  /**
+   * Pista oculta revelada por Observar (pegadas, símbolos, setas). Ao ser revelada liga a flag
+   * `pista:<id>`. Use várias em sequência para trilhas de investigação.
+   */
+  | {
+      tipo: 'pista';
+      id: string;
+      x: number;
+      y: number;
+      modelo: 'pegada' | 'simbolo' | 'seta' | 'mancha';
+      /** Rotação em graus (pegadas e setas). */
+      angulo?: number;
+      simbolo?: SimboloRuna;
+    }
   // ----- progressão -----
   | {
       tipo: 'bau';

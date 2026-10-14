@@ -37,7 +37,7 @@ Se precisar de um campo novo num contrato, **não edite o contrato**: estenda lo
 Cada `Api*` expõe `fabricas: MapaFabricas` para os tipos de `EspecEntidade` que cria:
 
 - Núcleo (`src/entidades/base.ts`): `decoracao`, `luz`, `placa`, `gatilho`, `coletavel`, `arma`, `pedraMemoria`, `bau`, `santuario`, `gaiola`.
-- Habilidades: `fonte`, `receptor`, `prisma`, `porta`, `ponteRetratil`, `plataformaMovel`, `placaPressao`, `caixa`, `ancora`, `runa`, `alavanca`, `lampada`, `engrenagem`, `pisoOculto`, `cristal`, `zonaEnigma`.
+- Habilidades: `fonte`, `receptor`, `prisma`, `porta`, `ponteRetratil`, `plataformaMovel`, `placaPressao`, `caixa`, `ancora`, `runa`, `alavanca`, `lampada`, `engrenagem`, `pisoOculto`, `cristal`, `pista`, `zonaEnigma`.
 - Combate: `inimigo`, `chefe`.
 - Diálogo: `npc`.
 

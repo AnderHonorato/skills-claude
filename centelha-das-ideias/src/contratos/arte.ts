@@ -157,7 +157,8 @@ export type TipoMecanismo =
   | 'gaiola'
   | 'santuario'
   | 'placa'
-  | 'coletavel';
+  | 'coletavel'
+  | 'pista';
 
 export interface VisualMecanismo {
   tipo: TipoMecanismo;
