@@ -1,99 +1,42 @@
 /**
- * API de testes automatizados (Playwright). Exposta em window.__centelha.
- * Não é usada pelo jogo; serve para os agentes críticos verificarem estados reais.
+ * API de teste para sondas automáticas (Playwright): window.__centelha.
+ * Não altera o jogo sozinha; só expõe leitura de estado e atalhos de teleporte.
  */
-import { BLOCO } from '../configuracao';
-import type { IdHabilidade } from '../contratos/base';
 import type { JogoCentelha } from '../jogo/jogo';
 
-export interface ApiTeste {
-  jogo: JogoCentelha;
-  estado(): Record<string, unknown>;
-  teleportar(x: number, y: number): void;
-  teleportarBloco(regiao: string, tx: number, ty: number): void;
-  irPara(idEntidade: string): boolean;
-  flag(nome: string, valor?: boolean): boolean;
-  darHabilidades(...h: IdHabilidade[]): void;
-  entidades(filtro?: string): { id: string; categoria: string; x: number; y: number }[];
-  salvamento(): unknown;
-  fps(): number;
-}
-
 export function instalarApiTeste(jogo: JogoCentelha): void {
-  let quadros = 0;
-  let fps = 0;
-  let marca = performance.now();
-  const medir = () => {
-    quadros++;
-    const agora = performance.now();
-    if (agora - marca >= 1000) {
-      fps = (quadros * 1000) / (agora - marca);
-      quadros = 0;
-      marca = agora;
-    }
-    requestAnimationFrame(medir);
-  };
-  requestAnimationFrame(medir);
-
-  const api: ApiTeste = {
+  (window as unknown as { __centelha: unknown }).__centelha = {
     jogo,
-    estado: () => {
-      const j = jogo.jogador;
-      return {
-        estadoJogo: jogo.estado,
-        x: Math.round(j.x),
-        y: Math.round(j.y),
-        z: Math.round(j.z),
-        bloco: jogo.mundo.bloco(j.x, j.y),
-        regiao: j.regiao,
-        vida: j.vida,
-        vidaMaxima: j.vidaMaxima,
-        inspiracao: j.inspiracao,
-        animacao: j.estado,
-        humor: j.humor,
-        armas: [...j.armas],
-        armaAtual: j.armaAtual,
-        habilidades: [...j.habilidades],
-        noChao: j.noChao,
-        alvoInteracao: j.alvoInteracao?.id ?? null,
-        tempoAtivo: jogo.estatisticas().tempoAtivo,
-        tempoCenas: jogo.estatisticas().tempoCenas,
-        msQuadro: jogo.renderizador.msQuadro,
-        particulas: jogo.particulas.quantidade(),
-        entidades: jogo.entidades.todas().length,
-      };
+    estado: () => ({
+      estado: jogo.estadoJogo,
+      x: +jogo.jogador.x.toFixed(2),
+      y: +jogo.jogador.y.toFixed(2),
+      z: +jogo.jogador.z.toFixed(2),
+      noChao: jogo.jogador.noChao,
+      vida: jogo.estado.vida,
+      arma: jogo.estado.armaAtual,
+      nivel: jogo.estado.nivelArma(),
+      xp: jogo.estado.armaAtual ? jogo.estado.armas[jogo.estado.armaAtual]?.xp : 0,
+      humor: jogo.jogador.humor,
+      escondido: jogo.jogador.escondido,
+      regiao: jogo.regiaoAtual,
+      missao: jogo.missaoAtual()?.etapa.texto ?? null,
+      flags: [...jogo.estado.flags],
+      afinidade: { ...jogo.estado.afinidade },
+      inimigosVivos: jogo.inimigos.filter((i) => i.vivo).length,
+    }),
+    ir: (x: number, z: number) => {
+      const y = Math.max(0, jogo.fisica.alturaChao(x, z, 50));
+      jogo.jogador.posicionar(x, y, z);
     },
-    teleportar: (x, y) => {
-      jogo.jogador.posicionar(x, y);
-      jogo.camera.centralizar(x, y);
+    flag: (f: string) => jogo.estado.ligar(f),
+    arma: (id: string) => jogo.estado.darArma(id as never),
+    habilidade: (id: string) => jogo.estado.aplicar([{ tipo: 'habilidade', id: id as never }]),
+    xp: (n: number) => jogo.estado.ganharXp(n),
+    escolher: (i: number | null) => jogo.escolher(i),
+    falar: (npc: string) => {
+      const n = jogo.npcs.find((x) => x.def.id === npc);
+      if (n) jogo.iniciarConversa(n);
     },
-    teleportarBloco: (regiao, tx, ty) => {
-      const p = jogo.mundo.localParaMundo(regiao, tx, ty);
-      jogo.jogador.posicionar(p.x, p.y);
-      jogo.camera.centralizar(p.x, p.y);
-    },
-    irPara: (id) => {
-      const e = jogo.entidades.porId(id);
-      if (!e) return false;
-      const p = jogo.mundo.pontoSeguroProximo(e.x, e.y + BLOCO);
-      jogo.jogador.posicionar(p.x, p.y);
-      jogo.camera.centralizar(p.x, p.y);
-      return true;
-    },
-    flag: (nome, valor) => {
-      if (valor !== undefined) jogo.flags.definir(nome, valor);
-      return jogo.flags.obter(nome);
-    },
-    darHabilidades: (...h) => {
-      for (const x of h) jogo.jogador.habilidades.add(x);
-    },
-    entidades: (filtro) =>
-      jogo.entidades
-        .todas()
-        .filter((e) => !filtro || e.categoria === filtro || e.id.includes(filtro))
-        .map((e) => ({ id: e.id, categoria: e.categoria, x: Math.round(e.x), y: Math.round(e.y) })),
-    salvamento: () => jogo.montarSalvamento(),
-    fps: () => Math.round(fps),
   };
-  (window as unknown as { __centelha: ApiTeste }).__centelha = api;
 }

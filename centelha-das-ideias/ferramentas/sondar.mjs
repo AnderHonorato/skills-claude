@@ -18,8 +18,9 @@
  *   foto ARQUIVO.png           captura de tela
  *   estado                     imprime window.__centelha.estado()
  *   js CODIGO                  avalia JavaScript na página e imprime o resultado
- *   bloco REGIAO TX TY         teleporta para bloco local da região
- *   ir ID                      teleporta para perto da entidade
+ *   ir X Z                     teleporta para a posição do mundo (metros)
+ *   falar NPC                  inicia conversa (lumi, pipo, bento, eco, vela)
+ *   escolher N|nada            escolhe a opção N do diálogo (ou avança)
  */
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
@@ -40,7 +41,14 @@ const passos = (arg('passos', 'novo; esperar 1000; foto inicio.png; estado') || 
   .filter(Boolean);
 
 mkdirSync(saida, { recursive: true });
-const navegador = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+const navegador = await chromium.launch({
+  args: [
+    '--autoplay-policy=no-user-gesture-required',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+    '--ignore-gpu-blocklist',
+  ],
+});
 const contexto = await navegador.newContext({
   viewport: { width: largura, height: altura },
   deviceScaleFactor: 1,
@@ -120,14 +128,17 @@ for (const passo of passos) {
       // Ferramenta local de teste: avalia de propósito o código passado na linha de comando.
       console.log(JSON.stringify(await pagina.evaluate((codigo) => eval(codigo), p.join(' '))));
       break;
-    case 'bloco':
-      await pagina.evaluate(
-        ([r, x, y]) => window.__centelha.teleportarBloco(r, Number(x), Number(y)),
-        p
-      );
-      break;
     case 'ir':
-      await pagina.evaluate((id) => window.__centelha.irPara(id), p[0]);
+      await pagina.evaluate(([x, z]) => window.__centelha.ir(Number(x), Number(z)), p);
+      break;
+    case 'falar':
+      await pagina.evaluate((n) => window.__centelha.falar(n), p[0]);
+      break;
+    case 'escolher':
+      await pagina.evaluate(
+        (i) => window.__centelha.escolher(i === 'nada' ? null : Number(i)),
+        p[0]
+      );
       break;
     default:
       console.log(`passo desconhecido: ${passo}`);

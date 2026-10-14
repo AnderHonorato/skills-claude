@@ -1,5 +1,33 @@
-import type { Vetor } from '../contratos/base';
-import type { Comando, Entrada } from '../contratos/jogo';
+export type Comando =
+  | 'cima'
+  | 'baixo'
+  | 'esquerda'
+  | 'direita'
+  | 'correr'
+  | 'pular'
+  | 'esquivar'
+  | 'atacar'
+  | 'especial'
+  | 'interagir'
+  | 'avancar'
+  | 'observar'
+  | 'conectar'
+  | 'criar'
+  | 'arma1'
+  | 'arma2'
+  | 'arma3'
+  | 'arma4'
+  | 'arma5'
+  | 'arma6'
+  | 'armaProxima'
+  | 'mapa'
+  | 'pausa'
+  | 'voltar';
+
+export interface Vetor {
+  x: number;
+  y: number;
+}
 
 const TECLAS: Record<string, Comando[]> = {
   KeyW: ['cima'],
@@ -26,7 +54,10 @@ const TECLAS: Record<string, Comando[]> = {
   Digit2: ['arma2'],
   Digit3: ['arma3'],
   Digit4: ['arma4'],
-  KeyH: ['curar'],
+  Digit5: ['arma5'],
+  Digit6: ['arma6'],
+  KeyL: ['especial'],
+  KeyX: ['especial'],
   KeyM: ['mapa'],
   Tab: ['mapa'],
   Escape: ['pausa', 'voltar'],
@@ -47,7 +78,7 @@ const BLOQUEAR_PADRAO = new Set([
  * Entrada unificada: teclado, mouse, controle (gamepad) e comandos virtuais do toque.
  * "apertou"/"soltou" valem por um passo de atualização (ver iniciarPasso/finalizarPasso).
  */
-export class EntradaJogo implements Entrada {
+export class EntradaJogo {
   private teclas = new Map<string, boolean>();
   private virtuais = new Set<Comando>();
   private controle = new Set<Comando>();
@@ -119,9 +150,8 @@ export class EntradaJogo implements Entrada {
     this.mouseAtivo = true;
     if (e.button === 0) {
       this.registrar('atacar', baixo);
-      this.registrar('avancar', baixo);
     } else if (e.button === 2) {
-      this.registrar('esquivar', baixo);
+      this.registrar('especial', baixo);
     }
   }
 
@@ -164,11 +194,12 @@ export class EntradaJogo implements Entrada {
     if (b(0)) agora.add('pular').add('avancar');
     if (b(1)) agora.add('esquivar').add('voltar');
     if (b(2)) agora.add('atacar');
-    if (b(3)) agora.add('interagir');
+    if (b(3)) agora.add('interagir').add('avancar');
     if (b(4)) agora.add('observar');
     if (b(5)) agora.add('conectar');
     if (b(7)) agora.add('criar');
-    if (b(6)) agora.add('correr');
+    if (b(6)) agora.add('especial');
+    if (b(11)) agora.add('armaProxima');
     if (b(8)) agora.add('mapa');
     if (b(9)) agora.add('pausa');
     if (b(12)) agora.add('cima');

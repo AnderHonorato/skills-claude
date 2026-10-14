@@ -2,7 +2,7 @@
   "name": "centelha-das-ideias",
   "private": true,
   "version": "0.1.0",
-  "description": "Claude — A Centelha das Ideias: aventura 2D de ação, exploração e enigmas.",
+  "description": "Claude — A Centelha das Ideias: aventura 3D de ação, exploração e enigmas.",
   "type": "module",
   "scripts": {
     "iniciar": "vite --host 0.0.0.0 --port 5173",
@@ -14,6 +14,7 @@
     "formatar": "prettier --write \"src/**/*.ts\" \"testes/**/*.{ts,mjs}\" \"ferramentas/**/*.{ts,mjs}\""
   },
   "devDependencies": {
+    "@types/three": "0.170.0",
     "playwright": "1.56.1",
     "prettier": "^3.8.1",
     "typescript": "5.9.3",
@@ -26,5 +27,8 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "dependencies": {
+    "three": "0.170.0"
   }
 }
