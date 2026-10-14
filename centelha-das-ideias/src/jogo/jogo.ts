@@ -38,6 +38,7 @@ import type { Tela } from '../motor/tela';
 import { Chao } from '../mundo/chao';
 import { FisicaJogo } from '../mundo/fisica';
 import { MundoJogo } from '../mundo/mundo';
+import { posicaoSegura } from '../mundo/seguranca';
 import { Cenas } from '../sistemas/cenas';
 import { criarCombate } from '../sistemas/combate/indice';
 import { criarDialogo } from '../sistemas/dialogo/indice';
@@ -623,27 +624,9 @@ export class JogoCentelha implements Jogo {
     this.verificarRegiao();
   }
 
-  /**
-   * Garante que o jogador volte num lugar seguro após atualizações de conteúdo:
-   * região existente, chão andável e longe de fronteiras (atual e anteriores).
-   */
+  /** Garante retomada em lugar seguro (ver src/mundo/seguranca.ts). */
   validarPosicao(d: DadosSalvos): Vetor {
-    const ok = (x: number, y: number) => {
-      const r = this.mundo.regiaoEm(x, y);
-      if (!r || !this.mundo.regiaoPorId(r)) return false;
-      const { tx, ty } = this.mundo.bloco(x, y);
-      if (!this.mundo.blocoSeguro(tx, ty)) return false;
-      const raio = MUNDO.fronteira.raioAviso + 1;
-      if (this.mundo.distanciaFronteiras(x, y) < raio) return false;
-      return true;
-    };
-    if (ok(d.jogador.x, d.jogador.y)) return { x: d.jogador.x, y: d.jogador.y };
-    if (d.checkpoint && ok(d.checkpoint.x, d.checkpoint.y))
-      return { x: d.checkpoint.x, y: d.checkpoint.y };
-    const def =
-      this.mundo.regiaoPorId(d.jogador.regiao) ?? this.mundo.regiaoPorId(MUNDO.regiaoInicial)!;
-    const p = this.mundo.localParaMundo(def.id, def.entrada.x, def.entrada.y);
-    return this.mundo.pontoSeguroProximo(p.x, p.y);
+    return posicaoSegura(this.mundo, d);
   }
 
   private criarEntidadesDoMundo(): void {
