@@ -4,7 +4,9 @@
 
 ## 1. Visão
 
-Aventura 2D de ação, exploração e pequenos enigmas, com câmera elevada (vista 3/4, semelhante à leitura espacial de jogos MOBA), em um mundo onde **ideias viram lugares vivos**. A tempestade de **Ruído** fragmentou o mundo: pontes de pensamento caíram, fios de energia apagaram e criaturas ficaram confusas. **Claude**, o mascote terracota de corpo geométrico, reconecta as regiões **observando, conectando e criando**.
+> **Atualização (versão 3D):** a pedido do Ander, o jogo virou **3D com Three.js**, câmera elevada estilo Astro Bot vista de cima e movimento analógico em 360°. As decisões dessa virada estão na seção 13; as seções antigas continuam valendo onde não conflitam.
+
+Aventura de ação, exploração e pequenos enigmas, com câmera elevada, em um mundo onde **ideias viram lugares vivos**. A tempestade de **Ruído** fragmentou o mundo: pontes de pensamento caíram, fios de energia apagaram e criaturas ficaram confusas. **Claude**, o mascote terracota de corpo geométrico, reconecta as regiões **observando, conectando e criando**.
 
 A mensagem nasce do que o jogador faz: entender antes de agir, experimentar, errar sem punição pesada e tentar de novo com mais força. Sem palestras e sem diálogos longos.
 
@@ -213,3 +215,30 @@ Duração-alvo da primeira partida: 12–18 min de jogo ativo (mínimo 10).
 - **Geometria:** vão de 1 bloco andando, 2 correndo; nada de vão de 3; Ponte de Luz para vãos ≥ 4.
 - **Ritmo:** Oficina enxuta (5 etapas, combate entre enigmas, Sopa de Ideias opcional); gaiolas do Vale ≤ 45 s cada; Pedras-Memória a cada ~3 min e no topo do Farol; fase do chefe salva.
 - **Ensino antes da combinação:** anel do Casco ensina pular ondas; matilha do Vale ensina amarrar; runa isolada antes do enigma das três; primeiro Cortador perto de uma lâmpada.
+
+
+## 13. Versão 3D (virada pedida pelo Ander)
+
+**Pedido:** visual mais rico e animado, 3D, movimento em todas as direções no estilo Astro Bot visto de cima, diálogos reais com escolhas que mudam a história, NPCs que andam, têm objetivos e podem ser atacados, golpes visíveis que funcionam andando e pulando, arma mágica que flutua e cresce no golpe, emoções bem expressivas, vento, árvores balançando, pegadas que somem, sombras, moitas para se esconder (como no LoL) e armas que definem habilidades e sobem de nível.
+
+**Como ficou:**
+
+| Pedido | Implementação |
+| --- | --- |
+| 3D, estilo Astro Bot de cima | Three.js; câmera perspectiva elevada (~49°) que segue com antecipação do movimento; aproxima nos diálogos |
+| Movimento 360° | Joystick/teclado analógico, aceleração suave, corrida, pulo com tempo de coiote e altura variável, esquiva com cambalhota |
+| Animação fluida | Animação procedural: passos, balanço dos braços, inclinação nas curvas, achatar/esticar ao pular e aterrissar, respiração, piscar |
+| Emoções expressivas | Rosto com olhos, sobrancelhas, 7 bocas e rubor; linguagem corporal e balõezinhos (!, ?, ♥, ♪, Zz, suor, raiva) para 12 humores com gatilhos reais (dano, vitória, ficar parado = sono, entrar no mato = curioso, bater em amigo = vergonha, escolhas de diálogo) |
+| Arma mágica que cresce | A arma flutua no ombro guiada por magia (raio de partículas da mão), voa em arco, cresce até 2,4× no golpe e deixa rastro brilhante |
+| Atacar andando e pulando | Golpes não travam o movimento; no ar viram giro (ou mergulho, com o martelo) |
+| Galho visível | Ao pegar, o galho aparece flutuando ao lado do Claude imediatamente |
+| Armas que definem habilidades | Galho, Espada, Martelo, Colher (armas), Cajado (magia), Escudo (defesa e reflexo). Cada uma com combo e especial próprio; experiência por acerto, derrota e faísca; níveis 1–5 (especial no 2, +dano no 3, especial melhor no 4, crítico/brilho no 5) |
+| NPCs vivos | Rotina com objetivo (regar, consertar, vigiar, polir), comentam ao passar, fogem de inimigos; podem ser atacados: reagem, ficam tontos, perdem afinidade e só voltam ao normal com pedido de desculpas |
+| Diálogos com escolhas | O jogador escolhe o que o Claude diz; as escolhas mudam afinidade, recompensas (Colher × Semente de Coragem; Martelo × Escudo × os dois), rota do Vale (luta × furtiva, que adormece os inimigos) e falas futuras |
+| Mundo vivo | Vento com rajadas (grama, flores, árvores, moitas e sombras balançam), folhas no ar, pegadas que desbotam, sombras reais, lagos animados, nuvens à deriva, ilhas flutuantes |
+| Moitas tipo LoL | Dentro do mato o Claude fica translúcido e os inimigos o perdem de vista; a moita se mexe e solta folhas quando alguém passa |
+| Fronteira | Parede com colisão real (andar, correr, esquivar, pular, investida, projéteis, Conectar e Criar), definida em `src/dados/mundo.ts` (`FRONTEIRA`), visível no mapa e com a mensagem exata |
+
+**Estrutura nova:** `src/nucleo` (lógica pura testável), `src/dados` (mundo, armas, diálogos, NPCs, missões), `src/render` (Three.js), `src/jogo` (entidades e orquestração), `src/ui` (HUD, diálogo, menus, toque), `src/audio` (síntese reaproveitada do agente de som).
+
+**Expansão:** acrescentar ilhas além da fronteira e mover `FRONTEIRA` (e `alemDaFronteira`). Ao carregar, `posicaoSegura` move quem estiver além da fronteira, no vazio ou dentro de parede para o ponto de retorno; o teste `expansão: mover a fronteira mantém salvamentos antigos válidos` cobre isso.

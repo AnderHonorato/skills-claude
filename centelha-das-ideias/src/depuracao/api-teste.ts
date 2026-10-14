@@ -34,6 +34,20 @@ export function instalarApiTeste(jogo: JogoCentelha): void {
     habilidade: (id: string) => jogo.estado.aplicar([{ tipo: 'habilidade', id: id as never }]),
     xp: (n: number) => jogo.estado.ganharXp(n),
     escolher: (i: number | null) => jogo.escolher(i),
+    /** Roda a lógica por alguns segundos sem esperar o desenho (testes rápidos). */
+    avancar: (segundos: number) => {
+      const n = Math.round(segundos * 60);
+      for (let i = 0; i < n; i++) jogo.passo(1 / 60);
+    },
+    comando: (c: string, ativo: boolean) => jogo.entrada.definirComandoVirtual(c as never, ativo),
+    joystick: (x: number, y: number) => jogo.entrada.definirJoystick(x, y),
+    usar: () => {
+      const j = jogo.jogador;
+      const it = jogo.objetos.interacaoProxima(j.x, j.y, j.z);
+      if (it) it.executar();
+      return it?.texto ?? null;
+    },
+    habilidadeUsar: (h: 'observar' | 'conectar' | 'criar') => jogo.usarHabilidade(h),
     falar: (npc: string) => {
       const n = jogo.npcs.find((x) => x.def.id === npc);
       if (n) jogo.iniciarConversa(n);

@@ -134,6 +134,9 @@ export function aplicarVento<T extends THREE.Material>(material: T, o: OpcoesVen
   // vazado: o que está entre a câmera e o Claude vira pontilhado
   float distTela = length(gl_FragCoord.xy - uFocoTela.xy) / uAlturaTela;
   float prof = -vViewPosition.z;
+  // muito perto da câmera: some (não tampa a tela)
+  if (prof < uFocoTela.z * 0.5) discard;
+  if (prof < uFocoTela.z * 0.62 && mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0) < 1.0) discard;
   if (prof < uFocoTela.z - 1.2 && distTela < 0.26) {
     float forca = 1.0 - smoothstep(0.12, 0.26, distTela);
     float p1 = mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0);

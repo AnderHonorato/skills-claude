@@ -69,7 +69,7 @@ export const REGIOES: Regiao[] = [
     musica: 'vale',
     ceu: ['#6f6aa8', '#c9a3c9'],
     nevoa: '#a99abd',
-    grama: ['#5f8f6e', '#7f9f78'],
+    grama: ['#5f7f86', '#7d7fa3'],
   },
   {
     id: 'farol',
@@ -533,7 +533,7 @@ export const INIMIGOS: SpawnInimigo[] = [
   { id: 'zumbido-v-1', tipo: 'zumbido', x: 45, z: -97 },
   { id: 'zumbido-v-2', tipo: 'zumbido', x: 55, z: -105 },
   { id: 'zumbido-v-3', tipo: 'zumbido', x: 29, z: -99 },
-  { id: 'estatica-grande', tipo: 'estatica', x: 36, z: -108, missao: 'vale' },
+  { id: 'estatica-grande', tipo: 'estatica', x: 39, z: -105, missao: 'vale' },
   // farol
   { id: 'zumbido-f-1', tipo: 'zumbido', x: 3, z: -89 },
   { id: 'chiado-f-1', tipo: 'chiado', x: -9, z: -93 },
