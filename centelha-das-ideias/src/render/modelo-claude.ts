@@ -37,6 +37,20 @@ export interface EstadoAnimacao {
 const COR_CORPO = '#D97757';
 const COR_ESCURA = '#B65A3E';
 
+/** Aparência do personagem (o mesmo esqueleto animado serve para todos). */
+export interface Aparencia {
+  corCorpo: string;
+  corEscura: string;
+  corCentelha?: string;
+  /** Geometria do corpo (centrada no núcleo, ~0,9 m). */
+  corpo?: () => THREE.BufferGeometry;
+  /** Posição do rosto (frente do corpo). */
+  rostoZ?: number;
+  rostoY?: number;
+  /** Enfeites extras presos ao núcleo (orelhas, anel, cauda...). */
+  enfeite?: (nucleo: THREE.Object3D, mat: (cor: string) => THREE.Material) => void;
+}
+
 export class ModeloClaude {
   readonly raiz = new THREE.Group();
   /** Pivô de giro (olha para a direção do movimento). */
@@ -69,8 +83,10 @@ export class ModeloClaude {
   private inclinacao = 0;
   private girar = 0;
   private flash = 0;
+  private corBaseCentelha = '#ffd27a';
 
-  constructor() {
+  constructor(aparencia?: Aparencia) {
+    const ap: Aparencia = aparencia ?? { corCorpo: COR_CORPO, corEscura: COR_ESCURA };
     const mat = (cor: string) => {
       const m = new THREE.MeshToonMaterial({
         color: cor,
@@ -80,11 +96,11 @@ export class ModeloClaude {
       this.materiais.push(m);
       return m;
     };
-    const corpoMat = mat(COR_CORPO);
-    const escuroMat = mat(COR_ESCURA);
+    const corpoMat = mat(ap.corCorpo);
+    const escuroMat = mat(ap.corEscura);
 
     // corpo: bloco arredondado, levemente mais largo embaixo
-    const geoCorpo = new RoundedBoxGeometry(0.92, 0.82, 0.72, 5, 0.24);
+    const geoCorpo = ap.corpo ? ap.corpo() : new RoundedBoxGeometry(0.92, 0.82, 0.72, 5, 0.24);
     const tronco = new THREE.Mesh(geoCorpo, corpoMat);
     tronco.castShadow = true;
     this.nucleo.position.y = 0.62;
@@ -101,8 +117,9 @@ export class ModeloClaude {
 
     // rosto na frente (+z)
     this.rosto = new Rosto({ separacao: 0.17, tamanho: 0.085 });
-    this.rosto.grupo.position.set(0, 0.08, 0.365);
+    this.rosto.grupo.position.set(0, ap.rostoY ?? 0.08, ap.rostoZ ?? 0.365);
     this.nucleo.add(this.rosto.grupo);
+    ap.enfeite?.(this.nucleo, mat);
 
     // bracinhos
     for (const [g, lado] of [
@@ -136,7 +153,8 @@ export class ModeloClaude {
     }
 
     // a centelha sobre a cabeça
-    this.matCentelha = new THREE.MeshBasicMaterial({ color: '#ffd27a' });
+    this.matCentelha = new THREE.MeshBasicMaterial({ color: ap.corCentelha ?? '#ffd27a' });
+    this.corBaseCentelha = ap.corCentelha ?? '#ffd27a';
     this.centelha = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), this.matCentelha);
     this.centelha.position.set(0, 0.7, 0);
     this.nucleo.add(this.centelha);
@@ -369,7 +387,7 @@ export class ModeloClaude {
     this.rosto.atualizar(dt);
 
     // centelha: cor e tamanho conforme a emoção
-    const corC = COR_CENTELHA[e.humor] ?? '#ffd27a';
+    const corC = COR_CENTELHA[e.humor] ?? this.corBaseCentelha;
     this.matCentelha.color.lerp(new THREE.Color(corC), 1 - Math.exp(-6 * dt));
     (this.brilhoCentelha.material as THREE.SpriteMaterial).color.copy(this.matCentelha.color);
     const pulso =

@@ -1,20 +1,32 @@
 /**
- * Ponto de entrada: cria o jogo 3D, a interface e o laço com passo fixo de 60 Hz.
+ * Ponto de entrada: por padrão abre o modo Sobrevivência (roguelike); com
+ * ?modo=aventura abre a aventura 3D clássica. Os dois usam laço com passo fixo de 60 Hz.
  */
 import './estilos/base.css';
+import './roguelike/estilos.css';
 import { instalarApiTeste } from './depuracao/api-teste';
 import { JogoCentelha } from './jogo/jogo';
 import { CHAVE_SALVAMENTO, lerSalvamento } from './nucleo/salvamento';
+import { instalarApiSobrevivencia } from './roguelike/api-teste';
+import { Partida } from './roguelike/jogo/partida';
+import { InterfaceSobrevivencia } from './roguelike/ui';
 import { Interface } from './ui/interface';
 
 const PASSO = 1 / 60;
 
 /** Gancho de atualização ao vivo da página publicada (ausente fora dela). */
+interface DadosAtualizacao {
+  salvamento?: string;
+  recordes?: Record<string, string>;
+}
+
 interface GanchoAtualizacao {
-  data?: { salvamento?: string };
-  ready?: (iniciar: (dados: { salvamento?: string }) => void) => void;
+  data?: DadosAtualizacao;
+  ready?: (iniciar: (dados: DadosAtualizacao) => void) => void;
   snapshot?: (obter: () => unknown) => void;
 }
+
+const PREFIXO_RECORDE = 'centelha-sobrevivencia:';
 
 function ganchoAtualizacao(): GanchoAtualizacao | undefined {
   try {
@@ -24,13 +36,56 @@ function ganchoAtualizacao(): GanchoAtualizacao | undefined {
   }
 }
 
-function restaurarDeAtualizacao(dados: { salvamento?: string } | undefined): void {
-  if (!dados?.salvamento) return;
+function restaurarDeAtualizacao(dados: DadosAtualizacao | undefined): void {
   try {
-    window.localStorage.setItem(CHAVE_SALVAMENTO, dados.salvamento);
+    if (dados?.salvamento) window.localStorage.setItem(CHAVE_SALVAMENTO, dados.salvamento);
+    for (const [k, v] of Object.entries(dados?.recordes ?? {}))
+      if (k.startsWith(PREFIXO_RECORDE)) window.localStorage.setItem(k, v);
   } catch {
     /* sem armazenamento */
   }
+}
+
+function lerRecordes(): Record<string, string> {
+  const r: Record<string, string> = {};
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k?.startsWith(PREFIXO_RECORDE)) r[k] = window.localStorage.getItem(k) ?? '';
+    }
+  } catch {
+    /* sem armazenamento */
+  }
+  return r;
+}
+
+function modoAventura(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get('modo') === 'aventura';
+  } catch {
+    return false;
+  }
+}
+
+/** Laço com passo fixo; desenha uma vez por quadro. */
+function laco(passo: (dt: number) => void, desenhar: (dt: number) => void): void {
+  let anterior = performance.now();
+  let acumulado = 0;
+  const quadro = (agora: number) => {
+    const dt = Math.min(0.1, (agora - anterior) / 1000);
+    anterior = agora;
+    acumulado += dt;
+    let passos = 0;
+    while (acumulado >= PASSO && passos < 5) {
+      passo(PASSO);
+      acumulado -= PASSO;
+      passos++;
+    }
+    if (passos >= 5) acumulado = 0;
+    desenhar(dt);
+    requestAnimationFrame(quadro);
+  };
+  requestAnimationFrame(quadro);
 }
 
 function semWebgl(): boolean {
@@ -40,6 +95,31 @@ function semWebgl(): boolean {
   } catch {
     return true;
   }
+}
+
+function iniciarSobrevivencia(canvas: HTMLCanvasElement, raizUi: HTMLElement): void {
+  const partida = new Partida(canvas);
+  const ui = new InterfaceSobrevivencia(partida, raizUi);
+  instalarApiSobrevivencia(partida);
+  partida.audio.musica('titulo');
+  const desbloquear = () => partida.audio.desbloquear();
+  window.addEventListener('pointerdown', desbloquear);
+  window.addEventListener('keydown', desbloquear);
+  laco(
+    (dt) => partida.passo(dt),
+    (dt) => {
+      partida.desenhar(dt);
+      ui.atualizar();
+    }
+  );
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      partida.pausar(true);
+      partida.vozes.silenciar();
+      partida.audio.suspender(true);
+    } else partida.audio.suspender(false);
+  });
+  ganchoAtualizacao()?.snapshot?.(() => ({ recordes: lerRecordes() }));
 }
 
 async function iniciar(): Promise<void> {
@@ -55,6 +135,10 @@ async function iniciar(): Promise<void> {
   } catch {
     /* segue com a fonte do sistema */
   }
+  if (!modoAventura()) {
+    iniciarSobrevivencia(canvas, raizUi);
+    return;
+  }
   const jogo = new JogoCentelha(canvas);
   const ui = new Interface(jogo, raizUi);
   jogo.ui = ui;
@@ -65,23 +149,10 @@ async function iniciar(): Promise<void> {
   window.addEventListener('pointerdown', desbloquear);
   window.addEventListener('keydown', desbloquear);
 
-  let anterior = performance.now();
-  let acumulado = 0;
-  const quadro = (agora: number) => {
-    const dt = Math.min(0.1, (agora - anterior) / 1000);
-    anterior = agora;
-    acumulado += dt;
-    let passos = 0;
-    while (acumulado >= PASSO && passos < 5) {
-      jogo.passo(PASSO);
-      acumulado -= PASSO;
-      passos++;
-    }
-    if (passos >= 5) acumulado = 0;
-    jogo.desenhar(dt);
-    requestAnimationFrame(quadro);
-  };
-  requestAnimationFrame(quadro);
+  laco(
+    (dt) => jogo.passo(dt),
+    (dt) => jogo.desenhar(dt)
+  );
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -94,7 +165,10 @@ async function iniciar(): Promise<void> {
   ganchoAtualizacao()?.snapshot?.(() => {
     jogo.salvar();
     try {
-      return { salvamento: window.localStorage.getItem(CHAVE_SALVAMENTO) ?? undefined };
+      return {
+        salvamento: window.localStorage.getItem(CHAVE_SALVAMENTO) ?? undefined,
+        recordes: lerRecordes(),
+      };
     } catch {
       return {};
     }

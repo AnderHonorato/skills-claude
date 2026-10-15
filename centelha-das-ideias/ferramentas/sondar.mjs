@@ -21,6 +21,7 @@
  *   ir X Z                     teleporta para a posição do mundo (metros)
  *   falar NPC                  inicia conversa (lumi, pipo, bento, eco, vela)
  *   escolher N|nada            escolhe a opção N do diálogo (ou avança)
+ *   sv METODO ARGS...          modo Sobrevivência: chama window.__sobrevivencia.METODO(ARGS)
  */
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
@@ -62,7 +63,11 @@ pagina.on('console', (m) => {
 });
 pagina.on('pageerror', (e) => erros.push(`[pageerror] ${e.message}`));
 await pagina.goto(url, { waitUntil: 'load' });
-await pagina.waitForFunction(() => window.__centelha !== undefined, null, { timeout: 15000 });
+await pagina.waitForFunction(
+  () => window.__centelha !== undefined || window.__sobrevivencia !== undefined,
+  null,
+  { timeout: 20000 }
+);
 await pagina.waitForTimeout(300);
 
 for (const passo of passos) {
@@ -122,7 +127,25 @@ for (const passo of passos) {
       console.log(`foto: ${join(saida, p[0] || 'foto.png')}`);
       break;
     case 'estado':
-      console.log(JSON.stringify(await pagina.evaluate(() => window.__centelha.estado())));
+      console.log(
+        JSON.stringify(
+          await pagina.evaluate(() => (window.__sobrevivencia ?? window.__centelha).estado())
+        )
+      );
+      break;
+    case 'sv':
+      // modo Sobrevivência: sv metodo arg1 arg2 (números viram números)
+      console.log(
+        JSON.stringify(
+          await pagina.evaluate(
+            ([m, ...a]) =>
+              window.__sobrevivencia[m](
+                ...a.map((v) => (v !== '' && !isNaN(Number(v)) ? Number(v) : v))
+              ),
+            p
+          )
+        ) ?? 'ok'
+      );
       break;
     case 'js':
       // Ferramenta local de teste: avalia de propósito o código passado na linha de comando.
