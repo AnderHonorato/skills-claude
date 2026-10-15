@@ -16,7 +16,8 @@ export type Elemento =
   | 'gravidade'
   | 'som'
   | 'agua'
-  | 'cristal';
+  | 'cristal'
+  | 'codigo';
 
 export type Comportamento =
   | 'orbita'
@@ -31,7 +32,10 @@ export type Comportamento =
   | 'ricochete'
   | 'bumerangue'
   | 'poca'
-  | 'drone';
+  | 'drone'
+  | 'muro'
+  | 'coletor'
+  | 'breakpoint';
 
 export interface Valores {
   /** Dano por acerto. */
@@ -83,6 +87,7 @@ export const ELEMENTOS: Record<Elemento, { nome: string; cor: string; efeito: st
   som: { nome: 'Som', cor: '#ff9fd8', efeito: 'Empurrão forte' },
   agua: { nome: 'Água', cor: '#5cb8ff', efeito: 'Empurra e deixa lento' },
   cristal: { nome: 'Cristal', cor: '#d6f4ff', efeito: 'Protege e fragmenta' },
+  codigo: { nome: 'Código', cor: '#39ff88', efeito: 'Trava: atordoa e corrompe' },
 };
 
 const v = (p: Partial<Valores>): Valores => ({
@@ -506,8 +511,71 @@ export const HABILIDADES: DefHabilidade[] = [
     evolucao5: 'Maré: ondas em volta de você',
     evolucao10: 'Tsunami: onda gigante que esmaga',
   },
+  {
+    id: 'firewall',
+    nome: 'Firewall',
+    descricao: 'Um anel de fogo em volta de você: inimigos de fora não passam e queimam.',
+    elemento: 'fogo',
+    comportamento: 'muro',
+    icone: '▦',
+    cor: '#ff6a2b',
+    cor2: '#ffd27a',
+    base: v({ dano: 8, recarga: 8.5, velocidade: 0, area: 3.6, quantidade: 1, duracao: 3 }),
+    maisQuantidade: [10],
+    evolucao5: 'Firewall dinâmico: o anel anda com você',
+    evolucao10: 'Defesa em camadas: dois anéis de fogo',
+  },
+  {
+    id: 'coletorLixo',
+    nome: 'Coletor de Lixo',
+    descricao: 'Um pulso que puxa os inimigos e apaga de vez quem está quase sem vida.',
+    elemento: 'codigo',
+    comportamento: 'coletor',
+    icone: '♻',
+    cor: '#39ff88',
+    cor2: '#c8ffd9',
+    base: v({ dano: 6, recarga: 5, velocidade: 0, area: 5.5, quantidade: 1 }),
+    maisQuantidade: [],
+    evolucao5: 'Coleta geral: também puxa os cristais da área',
+    evolucao10: 'Coleta agressiva: apaga inimigos com até 25% de vida',
+  },
+  {
+    id: 'breakpoint',
+    nome: 'Breakpoint',
+    descricao: 'Marca o maior grupo de inimigos e pausa a execução deles: ficam congelados.',
+    elemento: 'codigo',
+    comportamento: 'breakpoint',
+    icone: '⏸',
+    cor: '#ff4d6d',
+    cor2: '#9fe8ff',
+    base: v({
+      dano: 14,
+      recarga: 6.5,
+      velocidade: 0,
+      area: 3.4,
+      quantidade: 1,
+      duracao: 2.2,
+      alcance: 14,
+    }),
+    maisQuantidade: [7],
+    evolucao5: 'Inspeção: os pausados levam dano extra',
+    evolucao10: 'Depuração total: três breakpoints de uma vez',
+  },
+  {
+    id: 'recursao',
+    nome: 'Recursão',
+    descricao: 'Um bloco de código que, ao acertar, se divide em dois... que se dividem de novo.',
+    elemento: 'codigo',
+    comportamento: 'projetil',
+    icone: 'ƒ',
+    cor: '#39ff88',
+    cor2: '#eaffd0',
+    base: v({ dano: 11, recarga: 1.7, velocidade: 13, area: 0.5, quantidade: 1, alcance: 14 }),
+    maisQuantidade: [6],
+    evolucao5: 'Recursão profunda: um nível a mais de divisões',
+    evolucao10: 'Estouro de pilha: divide em três a cada nível',
+  },
 ];
-
 export interface DefPassiva {
   id: string;
   nome: string;

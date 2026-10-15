@@ -25,9 +25,12 @@ Jogo 3D (Three.js) com dois modos:
 
 As habilidades disparam sozinhas, cada uma com recarga e velocidade próprias.
 
-- **24 habilidades ativas** em 12 elementos (fogo, gelo, raio, luz, vento, terra, veneno,
-  gravidade, cristal, som, arcano, água): órbitas, projéteis, cadeias, ondas, chicotes, auras,
-  chuvas, tornados, buracos negros, lasers giratórios, ricochetes, bumerangues, poças e drones.
+- **28 habilidades ativas** em 13 elementos (fogo, gelo, raio, luz, vento, terra, veneno,
+  gravidade, cristal, som, arcano, água e código): órbitas, projéteis, cadeias, ondas, chicotes,
+  auras, chuvas, tornados, buracos negros, lasers giratórios, ricochetes, bumerangues, poças e drones.
+  Quatro são de programação: **Firewall** (anel de fogo que os inimigos não atravessam),
+  **Coletor de Lixo** (puxa e apaga quem está quase sem vida), **Breakpoint** (pausa o maior grupo
+  de inimigos) e **Recursão** (um bloco de código que se divide a cada acerto).
   Evoluções nos níveis 5 e 10 mudam o comportamento (ex.: a Centelha Orbital ganha um segundo
   anel girando ao contrário e, no 10, vira um Sol Particular que nunca apaga).
 - **13 passivas** (vida, regeneração, velocidade, recarga, dano, área, projéteis extras, ímã,
@@ -36,6 +39,13 @@ As habilidades disparam sozinhas, cada uma com recarga e velocidade próprias.
   uma evolução, contra 1 de uma nova).
 - **Cristais** em quatro tamanhos (1, 4, 15 e 60 de experiência): quanto maior, mais brilha.
   Aglomerados longe do centro guardam cristais prismáticos.
+- **Inimigos com cara de programação**: Vírus (se replica), Worm (rasteja em zigue-zague),
+  Cavalo de Troia (um "presente" que solta vírus se você chegar perto), Loop Infinito (fecha um
+  círculo em volta de você), Vazamento de Memória (deixa poças que deixam você lento), Ponteiro Nulo
+  (marca o chão e se teleporta para lá) e Stack Overflow (desmonta em blocos). Cada tipo novo é
+  apresentado na primeira vez que aparece.
+- Chefes alternados: **Grande Ruído** e **Ransomware**, que criptografa (trava) uma habilidade de
+  quem estiver perto por 8 segundos.
 - **Hordas** a cada 60 s e o chefe **Grande Ruído** a cada 180 s (onda que se esquiva, investida
   com aviso no chão e invocação). O dia vira noite com o tempo.
 - **Vozes:** cada personagem fala em português (síntese de voz do navegador, com tom e ritmo

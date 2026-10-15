@@ -4,7 +4,23 @@
  */
 
 export type IdInimigo =
-  'chiado' | 'spam' | 'zumbido' | 'estatica' | 'alucinacao' | 'glitch' | 'trollBug' | 'chefe';
+  | 'chiado'
+  | 'spam'
+  | 'zumbido'
+  | 'estatica'
+  | 'alucinacao'
+  | 'glitch'
+  | 'trollBug'
+  | 'chefe'
+  | 'virus'
+  | 'verme'
+  | 'trojan'
+  | 'loopInfinito'
+  | 'vazamento'
+  | 'ponteiroNulo'
+  | 'pilha'
+  | 'bloco'
+  | 'ransomware';
 
 export interface DefInimigo {
   id: IdInimigo;
@@ -23,8 +39,24 @@ export interface DefInimigo {
   voz: string;
   grito: string[];
   comportamento:
-    'perseguir' | 'enxame' | 'voador' | 'tanque' | 'atirador' | 'teleporte' | 'elite' | 'chefe';
+    | 'perseguir'
+    | 'enxame'
+    | 'voador'
+    | 'tanque'
+    | 'atirador'
+    | 'teleporte'
+    | 'elite'
+    | 'chefe'
+    | 'replicar'
+    | 'serpente'
+    | 'disfarce'
+    | 'orbitar'
+    | 'vazar'
+    | 'mirar'
+    | 'pilha';
   altura: number;
+  /** Aviso mostrado na primeira vez que aparece na partida. */
+  descricao?: string;
 }
 
 export const INIMIGOS: Record<IdInimigo, DefInimigo> = {
@@ -155,6 +187,157 @@ export const INIMIGOS: Record<IdInimigo, DefInimigo> = {
     grito: ['EU SOU O RUÍDO!'],
     comportamento: 'chefe',
     altura: 4,
+  },
+  virus: {
+    id: 'virus',
+    nome: 'Vírus',
+    vida: 11,
+    velocidade: 2.8,
+    dano: 7,
+    raio: 0.42,
+    cristal: 0,
+    cor: '#39ff88',
+    aparece: 40,
+    peso: 5,
+    voz: 'spam',
+    grito: ['replicando', 'cópia!'],
+    comportamento: 'replicar',
+    altura: 1,
+    descricao: 'Se copia sozinho de tempos em tempos. Mate rápido!',
+  },
+  verme: {
+    id: 'verme',
+    nome: 'Worm',
+    vida: 18,
+    velocidade: 4.3,
+    dano: 8,
+    raio: 0.42,
+    cristal: 0,
+    cor: '#ffb347',
+    aparece: 80,
+    peso: 3,
+    voz: 'zumbido',
+    grito: ['sssss'],
+    comportamento: 'serpente',
+    altura: 0.8,
+    descricao: 'Rasteja em zigue-zague pela rede, rápido demais.',
+  },
+  trojan: {
+    id: 'trojan',
+    nome: 'Cavalo de Troia',
+    vida: 45,
+    velocidade: 0,
+    dano: 6,
+    raio: 0.75,
+    cristal: 3,
+    cor: '#ffd27a',
+    aparece: 120,
+    peso: 0.8,
+    voz: 'estatica',
+    grito: ['surpresa!'],
+    comportamento: 'disfarce',
+    altura: 1.2,
+    descricao: 'Parece um presente... chegue perto e ele solta vírus. Destrua de longe!',
+  },
+  loopInfinito: {
+    id: 'loopInfinito',
+    nome: 'Loop Infinito',
+    vida: 30,
+    velocidade: 3.6,
+    dano: 9,
+    raio: 0.55,
+    cristal: 1,
+    cor: '#7ad7ff',
+    aparece: 110,
+    peso: 2,
+    voz: 'glitch',
+    grito: ['de novo', 'de novo', 'de novo'],
+    comportamento: 'orbitar',
+    altura: 1.1,
+    descricao: 'Gira em volta de você, fechando o círculo.',
+  },
+  vazamento: {
+    id: 'vazamento',
+    nome: 'Vazamento de Memória',
+    vida: 75,
+    velocidade: 1.4,
+    dano: 10,
+    raio: 0.9,
+    cristal: 1,
+    cor: '#8a6bff',
+    aparece: 160,
+    peso: 2,
+    voz: 'estatica',
+    grito: ['glub'],
+    comportamento: 'vazar',
+    altura: 1.1,
+    descricao: 'Deixa poças que deixam você lento — e cresce com o tempo.',
+  },
+  ponteiroNulo: {
+    id: 'ponteiroNulo',
+    nome: 'Ponteiro Nulo',
+    vida: 22,
+    velocidade: 2.4,
+    dano: 14,
+    raio: 0.45,
+    cristal: 1,
+    cor: '#ff5c5c',
+    aparece: 230,
+    peso: 2,
+    voz: 'glitch',
+    grito: ['null', 'NullPointerException'],
+    comportamento: 'mirar',
+    altura: 1.3,
+    descricao: 'Marca um ponto no chão e se teleporta para lá. Saia da marca!',
+  },
+  pilha: {
+    id: 'pilha',
+    nome: 'Stack Overflow',
+    vida: 95,
+    velocidade: 1.6,
+    dano: 16,
+    raio: 0.9,
+    cristal: 2,
+    cor: '#ffa04d',
+    aparece: 300,
+    peso: 1.2,
+    voz: 'trollbug',
+    grito: ['estourou!'],
+    comportamento: 'pilha',
+    altura: 2.2,
+    descricao: 'Ao cair, desmonta em blocos que continuam atacando.',
+  },
+  bloco: {
+    id: 'bloco',
+    nome: 'Bloco da Pilha',
+    vida: 16,
+    velocidade: 3.3,
+    dano: 6,
+    raio: 0.4,
+    cristal: 0,
+    cor: '#ffc27a',
+    aparece: 99999,
+    peso: 0,
+    voz: 'spam',
+    grito: ['push'],
+    comportamento: 'perseguir',
+    altura: 0.7,
+  },
+  ransomware: {
+    id: 'ransomware',
+    nome: 'Ransomware',
+    vida: 3000,
+    velocidade: 2,
+    dano: 32,
+    raio: 2,
+    cristal: 3,
+    cor: '#1f3b2a',
+    aparece: 99999,
+    peso: 0,
+    voz: 'chefe',
+    grito: ['PAGUE O RESGATE!'],
+    comportamento: 'chefe',
+    altura: 3.6,
   },
 };
 

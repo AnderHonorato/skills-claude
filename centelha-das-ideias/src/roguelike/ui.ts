@@ -858,6 +858,7 @@ export class InterfaceSobrevivencia {
       }
       this.definir(`sn${i}`, s.nivel, 'texto', h.nivel >= 10 ? 'MAX' : String(h.nivel));
       s.raiz.classList.toggle('evoluido', h.nivel >= 5);
+      s.raiz.classList.toggle('travada', h.travada);
       const r = Math.round(h.recarga * 100);
       this.definir(
         `sr${i}`,

@@ -153,6 +153,141 @@ export function geometriaInimigo(id: IdInimigo): THREE.BufferGeometry {
       }
       return juntar(partes);
     }
+    case 'virus': {
+      const partes = [em(new THREE.IcosahedronGeometry(0.4, 1), 0, 0.55, 0)];
+      const ico = new THREE.IcosahedronGeometry(1, 0);
+      const pos = ico.getAttribute('position');
+      const vistos = new Set<string>();
+      for (let k = 0; k < pos.count; k++) {
+        const d = new THREE.Vector3(pos.getX(k), pos.getY(k), pos.getZ(k)).normalize();
+        const chave = `${d.x.toFixed(2)},${d.y.toFixed(2)},${d.z.toFixed(2)}`;
+        if (vistos.has(chave)) continue;
+        vistos.add(chave);
+        const haste = new THREE.CylinderGeometry(0.035, 0.035, 0.26, 4);
+        haste.translate(0, 0.13, 0);
+        haste.applyQuaternion(
+          new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d)
+        );
+        haste.translate(d.x * 0.36, 0.55 + d.y * 0.36, d.z * 0.36);
+        partes.push(haste);
+        partes.push(
+          em(new THREE.SphereGeometry(0.075, 6, 4), d.x * 0.64, 0.55 + d.y * 0.64, d.z * 0.64)
+        );
+      }
+      return juntar(partes);
+    }
+    case 'verme':
+      return juntar([
+        em(new THREE.SphereGeometry(0.5, 12, 8), 0, 0.4, 0, 0.9, 0.8, 1.1),
+        em(
+          new THREE.ConeGeometry(0.09, 0.35, 4),
+          0.18,
+          0.32,
+          0.55,
+          1,
+          1,
+          1,
+          Math.PI / 2.3,
+          0,
+          -0.3
+        ),
+        em(
+          new THREE.ConeGeometry(0.09, 0.35, 4),
+          -0.18,
+          0.32,
+          0.55,
+          1,
+          1,
+          1,
+          Math.PI / 2.3,
+          0,
+          0.3
+        ),
+        em(
+          new THREE.CylinderGeometry(0.02, 0.02, 0.35, 4),
+          0.12,
+          0.85,
+          0.2,
+          1,
+          1,
+          1,
+          -0.4,
+          0,
+          -0.3
+        ),
+        em(
+          new THREE.CylinderGeometry(0.02, 0.02, 0.35, 4),
+          -0.12,
+          0.85,
+          0.2,
+          1,
+          1,
+          1,
+          -0.4,
+          0,
+          0.3
+        ),
+      ]);
+    case 'trojan':
+      // um "presente" dourado: o disfarce
+      return juntar([
+        em(new THREE.BoxGeometry(0.95, 0.7, 0.95), 0, 0.38, 0),
+        em(new THREE.BoxGeometry(1.02, 0.16, 1.02), 0, 0.78, 0),
+        em(new THREE.BoxGeometry(0.18, 0.74, 1), 0, 0.4, 0),
+        em(new THREE.BoxGeometry(1, 0.74, 0.18), 0, 0.4, 0),
+        em(new THREE.TorusGeometry(0.17, 0.06, 6, 12), 0.15, 0.98, 0, 1, 1, 1, 0, Math.PI / 2, 0.5),
+        em(
+          new THREE.TorusGeometry(0.17, 0.06, 6, 12),
+          -0.15,
+          0.98,
+          0,
+          1,
+          1,
+          1,
+          0,
+          Math.PI / 2,
+          -0.5
+        ),
+      ]);
+    case 'loopInfinito':
+      return juntar([
+        em(new THREE.TorusGeometry(0.42, 0.12, 8, 28), 0, 0.95, 0),
+        em(new THREE.TorusGeometry(0.42, 0.06, 6, 28), 0, 0.95, 0, 1, 1, 1, 0, Math.PI / 2, 0),
+        em(new THREE.SphereGeometry(0.2, 10, 8), 0, 0.95, 0),
+      ]);
+    case 'vazamento':
+      return juntar([
+        em(new THREE.SphereGeometry(0.55, 14, 10), 0, 0.5, 0, 1, 0.75, 1),
+        em(new THREE.SphereGeometry(0.18, 8, 6), 0.5, 0.18, 0.15),
+        em(new THREE.SphereGeometry(0.14, 8, 6), -0.45, 0.14, -0.2),
+        em(new THREE.SphereGeometry(0.12, 8, 6), 0.1, 0.1, -0.55),
+        em(new THREE.ConeGeometry(0.12, 0.3, 6), 0, 0.98, 0.1, 1, 1, 1, 0.3),
+      ]);
+    case 'ponteiroNulo':
+      // seta de cursor do mouse
+      return juntar([
+        em(new THREE.ConeGeometry(0.42, 0.95, 3), 0, 1.05, 0, 1, 1, 0.45, Math.PI, 0, 0.35),
+        em(new THREE.BoxGeometry(0.16, 0.5, 0.14), 0.12, 1.55, 0, 1, 1, 1, 0, 0, 0.35),
+      ]);
+    case 'pilha':
+      return juntar([
+        em(new THREE.BoxGeometry(0.95, 0.46, 0.95), 0, 0.24, 0),
+        em(new THREE.BoxGeometry(0.85, 0.44, 0.85), 0.06, 0.7, -0.03, 1, 1, 1, 0, 0.18, 0),
+        em(new THREE.BoxGeometry(0.78, 0.42, 0.78), -0.05, 1.14, 0.04, 1, 1, 1, 0, -0.22, 0),
+        em(new THREE.BoxGeometry(0.7, 0.4, 0.7), 0.08, 1.56, 0, 1, 1, 1, 0, 0.35, 0.08),
+      ]);
+    case 'bloco':
+      return juntar([em(new THREE.BoxGeometry(0.62, 0.55, 0.62), 0, 0.3, 0)]);
+    case 'ransomware':
+      // um cadeado gigante
+      return juntar([
+        em(new THREE.BoxGeometry(1.7, 1.45, 1), 0, 1.0, 0),
+        em(new THREE.TorusGeometry(0.58, 0.16, 8, 20, Math.PI), 0, 1.72, 0),
+        em(new THREE.CylinderGeometry(0.16, 0.16, 0.3, 8), 0.58, 1.6, 0),
+        em(new THREE.CylinderGeometry(0.16, 0.16, 0.3, 8), -0.58, 1.6, 0),
+        em(new THREE.CylinderGeometry(0.13, 0.13, 0.1, 10), 0, 0.85, 0.52, 1, 1, 1, Math.PI / 2),
+        em(new THREE.BoxGeometry(0.1, 0.32, 0.08), 0, 0.66, 0.52),
+      ]);
   }
 }
 
@@ -166,6 +301,15 @@ export const OLHOS: Record<IdInimigo, { y: number; z: number; sep: number; tam: 
   glitch: { y: 0.7, z: 0.41, sep: 0.18, tam: 0.08 },
   trollBug: { y: 0.9, z: 1.2, sep: 0.18, tam: 0.1 },
   chefe: { y: 1.9, z: 1.0, sep: 0.4, tam: 0.18 },
+  virus: { y: 0.62, z: 0.4, sep: 0.14, tam: 0.07 },
+  verme: { y: 0.55, z: 0.42, sep: 0.15, tam: 0.07 },
+  trojan: { y: 0.55, z: 0.49, sep: 0.2, tam: 0.0001 },
+  loopInfinito: { y: 0.98, z: 0.19, sep: 0.07, tam: 0.06 },
+  vazamento: { y: 0.6, z: 0.5, sep: 0.18, tam: 0.08 },
+  ponteiroNulo: { y: 1.1, z: 0.14, sep: 0.11, tam: 0.07 },
+  pilha: { y: 1.6, z: 0.36, sep: 0.15, tam: 0.07 },
+  bloco: { y: 0.4, z: 0.32, sep: 0.12, tam: 0.06 },
+  ransomware: { y: 1.25, z: 0.51, sep: 0.42, tam: 0.16 },
 };
 
 /** Formas dos projéteis. */

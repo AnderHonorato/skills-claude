@@ -66,6 +66,25 @@ export interface GanchosRede {
 
 export type EstadoPartida = 'menu' | 'jogando' | 'nivel' | 'pausa' | 'fim';
 
+type TipoAtaque = 'onda' | 'investida' | 'invocar' | 'abrir' | 'mirar' | 'criptografar';
+const TIPOS_ATAQUE: TipoAtaque[] = [
+  'onda',
+  'investida',
+  'invocar',
+  'abrir',
+  'mirar',
+  'criptografar',
+];
+
+/** Poça deixada pelo Vazamento de Memória (deixa os jogadores lentos). */
+interface PocaInimiga {
+  x: number;
+  z: number;
+  raio: number;
+  vida: number;
+  malha: THREE.Mesh;
+}
+
 interface Inimigo {
   id: number;
   def: DefInimigo;
@@ -94,7 +113,11 @@ interface Inimigo {
   elite: boolean;
   fase: number;
   hits: Float32Array;
-  ataque?: { tipo: 'onda' | 'investida' | 'invocar'; t: number; ax: number; az: number };
+  ataque?: { tipo: TipoAtaque; t: number; ax: number; az: number };
+  /** Vírus: quantas vezes já se copiou. */
+  geracao?: number;
+  /** Worm: últimas posições (para desenhar o corpo). */
+  rastro?: number[];
 }
 
 interface Projetil {
@@ -122,11 +145,15 @@ interface Projetil {
   ricochete?: boolean;
   arco?: { alvoX: number; alvoZ: number; t: number; total: number; ox: number; oz: number };
   fragmenta?: boolean;
+  /** Recursão: quantas vezes ainda se divide ao acertar. */
+  profundidade?: number;
   cdAcerto?: number;
 }
 
 interface Zona {
-  tipo: 'tornado' | 'buraco' | 'poca' | 'fogo';
+  tipo: 'tornado' | 'buraco' | 'poca' | 'fogo' | 'muro';
+  /** Firewall evoluído: acompanha o dono. */
+  segue?: boolean;
   hab: number;
   x: number;
   z: number;
@@ -442,6 +469,8 @@ export class Partida {
   private lotesProj = new Map<FormaProjetil, Lote>();
   private lotesCristal: Lote[] = [];
   private loteOrbita: Lote;
+  /** Corpo segmentado dos Worms. */
+  private loteSegmentos: Lote;
   private aura: THREE.Mesh;
   private matAura: THREE.MeshBasicMaterial;
   private alvoCam = new THREE.Vector3();
@@ -453,9 +482,22 @@ export class Partida {
   private eTmp = new THREE.Euler();
   private menuGiro = 0;
   private nivelDesde = 0;
+  private chefesSurgidos = 0;
   private noite = 0;
   private anelMagnetico: THREE.Mesh;
   private aurasJogador = new Map<Jogador, THREE.Mesh>();
+  private pocasInimigas: PocaInimiga[] = [];
+  private geoPoca = new THREE.CircleGeometry(1, 28);
+  private matPoca = new THREE.MeshBasicMaterial({
+    color: '#7a5cff',
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+  });
+  /** Tipos de inimigo já apresentados nesta partida (aviso na primeira aparição). */
+  private tiposVistos = new Set<IdInimigo>();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -505,7 +547,7 @@ export class Partida {
       const lote = new Lote(
         geometriaInimigo(id),
         matInimigo,
-        id === 'chefe' ? 4 : MAX_INIMIGOS,
+        INIMIGOS[id].comportamento === 'chefe' ? 4 : MAX_INIMIGOS,
         this.qualidade === 'alta'
       );
       this.lotesInimigos.set(id, lote);
@@ -542,6 +584,13 @@ export class Partida {
       this.lotesProj.set(f, lote);
       this.cena.add(lote.malha);
     }
+    this.loteSegmentos = new Lote(
+      new THREE.SphereGeometry(1, 12, 8),
+      new THREE.MeshToonMaterial({ color: '#ffffff', gradientMap: gradienteToon() }),
+      MAX_INIMIGOS,
+      this.qualidade === 'alta'
+    );
+    this.cena.add(this.loteSegmentos.malha);
     this.loteOrbita = new Lote(
       new THREE.OctahedronGeometry(0.5, 0),
       new THREE.MeshBasicMaterial({ color: '#ffffff' }),
@@ -778,6 +827,10 @@ export class Partida {
     for (const a of this.avisos) this.cena.remove(a.malha);
     for (const e of this.efeitos) this.cena.remove(e.malha);
     for (const it of this.itens) this.cena.remove(it.malha);
+    for (const p of this.pocasInimigas) this.cena.remove(p.malha);
+    this.pocasInimigas = [];
+    this.tiposVistos.clear();
+    this.chefesSurgidos = 0;
     this.zonas = [];
     this.ondas = [];
     this.avisos = [];
@@ -1110,6 +1163,7 @@ export class Partida {
     this.atualizarInimigos(dt);
     this.atualizarProjeteis(dt);
     this.atualizarZonas(dt);
+    this.atualizarPocasInimigas(dt);
     this.atualizarOndas(dt);
     this.atualizarAvisos(dt);
     this.atualizarCristais(dt);
@@ -1140,7 +1194,13 @@ export class Partida {
     const parado = this.j.caido || this.j.ausente;
     const m = parado ? { x: 0, y: 0 } : ent.movimento();
     const mag = Math.min(1, Math.hypot(m.x, m.y));
-    const vel = 6 * at.velocidade * (ent.correndo() ? 1.1 : 1) * (this.j.caido ? 0 : 1);
+    const lentoPoca = this.naPoca(this.x, this.z);
+    const vel =
+      6 *
+      at.velocidade *
+      (ent.correndo() ? 1.1 : 1) *
+      (this.j.caido ? 0 : 1) *
+      (lentoPoca ? 0.55 : 1);
     this.recargaDash = Math.max(0, this.recargaDash - dt);
     this.invencivel = Math.max(0, this.invencivel - dt);
     if (!parado && (ent.apertou('pular') || ent.apertou('esquivar')) && this.recargaDash <= 0) {
@@ -1322,9 +1382,10 @@ export class Partida {
 
   private criarInimigo(def: DefInimigo, x: number, z: number, elite = false): Inimigo | null {
     if (!this.autoridade) return null;
-    if (this.inimigos.length >= MAX_INIMIGOS && def.id !== 'chefe') return null;
+    if (this.inimigos.length >= MAX_INIMIGOS && def.comportamento !== 'chefe') return null;
     const mv = multVida(this.tempo) * (elite ? 6 : 1);
-    const vida = def.vida * mv * (def.id === 'chefe' ? 1 + this.chefesDerrotados * 0.8 : 1);
+    const vida =
+      def.vida * mv * (def.comportamento === 'chefe' ? 1 + this.chefesDerrotados * 0.8 : 1);
     const i: Inimigo = {
       id: this.proximoId++,
       def,
@@ -1355,6 +1416,10 @@ export class Partida {
       hits: new Float32Array(HABILIDADES.length * MAX_JOGADORES),
     };
     this.inimigos.push(i);
+    if (def.descricao && !this.tiposVistos.has(def.id)) {
+      this.tiposVistos.add(def.id);
+      this.mostrarBanner(`NOVO: ${def.nome.toUpperCase()}`, def.descricao, def.cor, 3);
+    }
     return i;
   }
 
@@ -1419,17 +1484,30 @@ export class Partida {
   }
 
   private surgirChefe(): void {
+    // os chefes se alternam: Grande Ruído, Ransomware, Grande Ruído...
+    const n = Math.round(this.proximoChefe / INTERVALO_CHEFE) - 2;
+    const ransom = n % 2 === 1;
     if (this.autoridade) {
       const p = this.pontoBorda(18);
-      const c = this.criarInimigo(INIMIGOS.chefe, p.x, p.z);
+      const c = this.criarInimigo(ransom ? INIMIGOS.ransomware : INIMIGOS.chefe, p.x, p.z);
       if (!c) return;
       this.chefeAtual = c;
     }
-    this.mostrarBanner('O GRANDE RUÍDO CHEGOU', 'Derrote-o para um baú de ideias', '#c58bff', 4);
+    if (ransom)
+      this.mostrarBanner(
+        'RANSOMWARE INVADIU!',
+        'Ele criptografa suas habilidades. Derrube-o rápido!',
+        '#39ff88',
+        4
+      );
+    else
+      this.mostrarBanner('O GRANDE RUÍDO CHEGOU', 'Derrote-o para um baú de ideias', '#c58bff', 4);
     this.audio.musica('chefe');
     this.audio.tocar('chefeRugido');
     this.vozes.falar(
-      'Eu sou o Ruído! Ninguém vai me ouvir... mas vão me sentir!',
+      ransom
+        ? 'Seus arquivos agora são meus! Pague o resgate!'
+        : 'Eu sou o Ruído! Ninguém vai me ouvir... mas vão me sentir!',
       { tom: 0.3, ritmo: 0.85, bipe: 'chefe' },
       true
     );
@@ -1478,7 +1556,7 @@ export class Partida {
         i.atordoado = Math.max(i.atordoado, 0.25);
         break;
       case 'terra':
-        if (i.def.id !== 'chefe') {
+        if (i.def.comportamento !== 'chefe') {
           i.vy = 7;
           i.atordoado = Math.max(i.atordoado, 0.6);
         }
@@ -1490,10 +1568,14 @@ export class Partida {
       case 'agua':
         i.lento = Math.max(i.lento, 1.5);
         break;
+      case 'codigo':
+        i.atordoado = Math.max(i.atordoado, 0.3);
+        break;
     }
     if (opcoes.lento) i.lento = Math.max(i.lento, 1);
     if (forca > 0) {
-      const res = i.def.id === 'chefe' ? 0.08 : i.elite || i.def.id === 'trollBug' ? 0.35 : 1;
+      const res =
+        i.def.comportamento === 'chefe' ? 0.08 : i.elite || i.def.id === 'trollBug' ? 0.35 : 1;
       i.vx += ex * forca * res;
       i.vz += ez * forca * res;
     }
@@ -1517,22 +1599,32 @@ export class Partida {
     i.vivo = false;
     if (!this.autoridade) {
       // convidado: só o efeito; o anfitrião decide cristais, itens e contagem
-      this.brilhos.explosao(i.x, 0.6, i.z, i.def.id === 'chefe' ? 120 : 10, {
+      this.brilhos.explosao(i.x, 0.6, i.z, i.def.comportamento === 'chefe' ? 120 : 10, {
         cor: i.def.cor,
         tamanho: 0.28,
         vida: 0.6,
-        velocidade: i.def.id === 'chefe' ? 12 : 5,
+        velocidade: i.def.comportamento === 'chefe' ? 12 : 5,
       });
       this.som('inimigoDerrotado', { x: i.x, y: i.z, volume: 0.5 }, 0.07);
       return;
     }
     this.abates++;
+    if (i.def.id === 'pilha')
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2 + this.rnd();
+        const b = this.criarInimigo(
+          INIMIGOS.bloco,
+          i.x + Math.cos(a) * 0.9,
+          i.z + Math.sin(a) * 0.9
+        );
+        if (b) b.vy = 5;
+      }
     const cor = i.def.cor;
-    this.brilhos.explosao(i.x, 0.6, i.z, i.def.id === 'chefe' ? 120 : 10, {
+    this.brilhos.explosao(i.x, 0.6, i.z, i.def.comportamento === 'chefe' ? 120 : 10, {
       cor,
       tamanho: 0.28,
       vida: 0.6,
-      velocidade: i.def.id === 'chefe' ? 12 : 5,
+      velocidade: i.def.comportamento === 'chefe' ? 12 : 5,
     });
     if (i.def.id !== 'spam' || this.rnd() < 0.4)
       this.poeira.explosao(i.x, 0.5, i.z, 4, {
@@ -1546,7 +1638,7 @@ export class Partida {
     if (this.rnd() < 0.08) this.vozes.resmungar(i.def.voz, i.x, i.z);
     // cristal
     const t = i.elite ? 2 : i.def.cristal;
-    if (i.def.id === 'chefe') {
+    if (i.def.comportamento === 'chefe') {
       for (let k = 0; k < 12; k++)
         this.soltarCristal(
           i.x + (this.rnd() - 0.5) * 4,
@@ -1558,7 +1650,13 @@ export class Partida {
       this.chefeAtual = null;
       this.audio.tocar('chefeDerrotado');
       this.audio.musica(this.noite > 0.5 ? 'vale' : 'jardim');
-      this.mostrarBanner('GRANDE RUÍDO SILENCIADO!', 'Pegue o baú de ideias', '#ffd27a', 3.5);
+      this.mostrarBanner(
+        i.def.id === 'ransomware' ? 'RANSOMWARE REMOVIDO!' : 'GRANDE RUÍDO SILENCIADO!',
+        i.def.id === 'ransomware' ? 'Arquivos liberados. Pegue o baú!' : 'Pegue o baú de ideias',
+        '#ffd27a',
+        3.5
+      );
+      for (const jg of this.jogadores) jg.bloqueios.clear();
       this.falar('vitoria', true);
       this.sentir('feliz', 3);
       this.tremer(1);
@@ -1692,6 +1790,23 @@ export class Partida {
   // ------------------------------------------------------------------ habilidades
 
   private atualizarHabilidade(h: HabAtiva, dt: number): void {
+    const trava = this.j.bloqueios.get(h.idx);
+    if (trava !== undefined) {
+      if (trava > this.tempo) {
+        if (this.rnd() < dt * 3)
+          this.brilhos.emitir({
+            x: this.x,
+            y: 2,
+            z: this.z,
+            vy: 1,
+            vida: 0.5,
+            tamanho: 0.2,
+            cor: '#39ff88',
+          });
+        return;
+      }
+      this.j.bloqueios.delete(h.idx);
+    }
     const v = valoresHabilidade(h.def, h.nivel, this.atributos);
     h.timer -= dt;
     h.fase += dt;
@@ -1731,6 +1846,15 @@ export class Partida {
         break;
       case 'poca':
         this.poca(h, v);
+        break;
+      case 'muro':
+        this.firewall(h, v);
+        break;
+      case 'coletor':
+        this.coletorLixo(h, v);
+        break;
+      case 'breakpoint':
+        this.breakpoint(h, v);
         break;
     }
   }
@@ -2006,6 +2130,24 @@ export class Partida {
 
   private dispararProjetil(h: HabAtiva, v: ReturnType<typeof valoresHabilidade>): void {
     const id = h.def.id;
+    if (id === 'recursao') {
+      for (let k = 0; k < v.quantidade; k++) {
+        const alvo = this.maisProximo(this.x, this.z, v.alcance);
+        const base = alvo
+          ? Math.atan2(alvo.z - this.z, alvo.x - this.x)
+          : Math.atan2(this.dirZ, this.dirX);
+        const a = base + (k - (v.quantidade - 1) / 2) * 0.25;
+        this.novoProjetil(h, v, this.x, 0.9, this.z, Math.cos(a), Math.sin(a), {
+          forma: 'cristal',
+          escala: 0.55,
+          raio: 0.45,
+          profundidade: 2 + (v.evo5 ? 1 : 0),
+          perfura: 1,
+        });
+      }
+      this.som('ataqueCajado', { volume: 0.3, tom: 2 }, 0.08);
+      return;
+    }
     if (id === 'lancaGelo') {
       const n = v.quantidade + (v.evo10 ? 2 : 0);
       const base = Math.atan2(this.dirZ, this.dirX);
@@ -2397,6 +2539,33 @@ export class Partida {
       }
       g.scale.setScalar(raio / 1.6);
       malha = g;
+    } else if (tipo === 'muro') {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({
+        color: h.def.cor,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const parede = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1.4, 48, 1, true), mat);
+      parede.position.y = 0.7;
+      const base = new THREE.Mesh(
+        new THREE.RingGeometry(0.9, 1.05, 48),
+        new THREE.MeshBasicMaterial({
+          color: h.def.cor2,
+          transparent: true,
+          opacity: 0.8,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      );
+      base.rotation.x = -Math.PI / 2;
+      base.position.y = 0.05;
+      g.add(parede, base);
+      g.scale.set(raio, 1, raio);
+      malha = g;
     } else if (tipo === 'buraco') {
       const g = new THREE.Group();
       const nucleo = new THREE.Mesh(
@@ -2706,6 +2875,245 @@ export class Partida {
     });
   }
 
+  /** Ransomware: trava uma habilidade de cada jogador perto por alguns segundos. */
+  private criptografar(i: Inimigo): void {
+    this.ondaVisual(i.x, i.z, '#39ff88', 9, 0.6);
+    this.brilhos.explosao(i.x, 2, i.z, 60, {
+      cor: '#39ff88',
+      tamanho: 0.3,
+      vida: 0.8,
+      velocidade: 9,
+    });
+    this.som('runaErro', {}, 0);
+    this.tremer(0.5);
+    if (!this.autoridade) return;
+    for (const jg of this.ativos()) {
+      if ((jg.x - i.x) ** 2 + (jg.z - i.z) ** 2 > 9 * 9) continue;
+      const livres = jg.habs.filter((h) => !((jg.bloqueios.get(h.idx) ?? 0) > this.tempo));
+      if (!livres.length) continue;
+      const h = livres[Math.floor(this.rnd() * livres.length)];
+      jg.bloqueios.set(h.idx, this.tempo + 8);
+      this.brilhos.explosao(jg.x, 1.4, jg.z, 30, { cor: '#39ff88', tamanho: 0.25, vida: 0.6 });
+      if (jg.local)
+        this.mostrarBanner(
+          'ARQUIVO CRIPTOGRAFADO!',
+          `${h.def.nome} travou por 8 segundos`,
+          '#39ff88',
+          2.5
+        );
+    }
+  }
+
+  // ------------------------------------------------------------------ habilidades de código
+
+  private firewall(h: HabAtiva, v: ReturnType<typeof valoresHabilidade>): void {
+    const aneis = v.evo10 ? [v.area, v.area * 0.55] : [v.area];
+    for (const r of aneis) {
+      const z = this.criarZona(h, 'muro', this.x, this.z, r, v.duracao, v.dano);
+      z.segue = v.evo5;
+      z.tick = 0;
+    }
+    this.som('energizar', { volume: 0.5, tom: 0.8 }, 0.2);
+  }
+
+  private coletorLixo(h: HabAtiva, v: ReturnType<typeof valoresHabilidade>): void {
+    const limiar = v.evo10 ? 0.25 : 0.1 + h.nivel * 0.008;
+    let apagados = 0;
+    for (const i of this.vizinhos(this.x, this.z, v.area, this.tmpLista).slice()) {
+      const dx = this.x - i.x;
+      const dz = this.z - i.z;
+      const d = Math.hypot(dx, dz) || 1;
+      const chefe = i.def.comportamento === 'chefe';
+      if (!chefe && i.vida / i.vidaMax <= limiar) {
+        // "lixo": apagado da memória
+        this.causarDano(i, i.vida + 1, h.idx, 'codigo');
+        apagados++;
+        continue;
+      }
+      this.causarDano(i, v.dano, h.idx, 'codigo', dx / d, dz / d, chefe ? 0 : 7);
+    }
+    if (v.evo5)
+      for (const c of this.cristais)
+        if (!c.atraido && (c.x - this.x) ** 2 + (c.z - this.z) ** 2 < v.area * v.area * 2.2) {
+          c.atraido = true;
+          c.alvo = this.j.indice;
+        }
+    // visual: varredura que entra em direção ao jogador
+    for (let k = 0; k < 40; k++) {
+      const a = (k / 40) * Math.PI * 2;
+      this.brilhos.emitir({
+        x: this.x + Math.cos(a) * v.area,
+        y: 0.4,
+        z: this.z + Math.sin(a) * v.area,
+        vx: -Math.cos(a) * v.area * 2.2,
+        vz: -Math.sin(a) * v.area * 2.2,
+        vida: 0.45,
+        tamanho: 0.22,
+        cor: k % 3 ? h.def.cor : h.def.cor2,
+        arrasto: 0,
+      });
+    }
+    this.ondaVisual(this.x, this.z, h.def.cor, v.area, 0.35);
+    if (apagados > 0) {
+      this.brilhos.explosao(this.x, 1.2, this.z, 10 + apagados * 3, {
+        cor: '#c8ffd9',
+        tamanho: 0.25,
+        vida: 0.6,
+        velocidade: 5,
+        gravidade: -2,
+      });
+      this.som('faiscaObtida', { tom: 0.7, volume: 0.5 }, 0.1);
+    }
+    this.som('chefeOnda', { volume: 0.35, tom: 1.6 }, 0.2);
+  }
+
+  private breakpoint(h: HabAtiva, v: ReturnType<typeof valoresHabilidade>): void {
+    const alvos = this.gruposMaiores(v.alcance, v.evo10 ? 3 : v.quantidade);
+    if (!alvos.length) {
+      h.timer = 0.5;
+      return;
+    }
+    const dono = this.j;
+    for (const a of alvos) {
+      this.aviso(a.x, a.z, v.area, 0.6, h.def.cor, () => {
+        const antes = this.j;
+        this.j = dono;
+        for (const i of this.vizinhos(a.x, a.z, v.area, this.tmpLista).slice()) {
+          this.causarDano(i, v.dano * (v.evo5 ? 1.4 : 1), h.idx, 'codigo');
+          if (i.vivo && i.def.comportamento !== 'chefe') {
+            i.congelado = Math.max(i.congelado, v.duracao);
+            i.atordoado = Math.max(i.atordoado, v.duracao);
+          }
+        }
+        this.ondaVisual(a.x, a.z, h.def.cor2, v.area * 1.2, 0.5);
+        this.brilhos.explosao(a.x, 1, a.z, 30, {
+          cor: h.def.cor2,
+          tamanho: 0.25,
+          vida: 0.6,
+          velocidade: 4,
+        });
+        this.som('criarEscudo', { x: a.x, y: a.z, volume: 0.5, tom: 1.4 }, 0.1);
+        this.j = antes;
+      });
+    }
+    this.som('inimigoTelegrafo', { volume: 0.35, tom: 1.8 }, 0.2);
+  }
+
+  /** Centros dos maiores grupos de inimigos ao alcance. */
+  private gruposMaiores(alcance: number, n: number): { x: number; z: number }[] {
+    const lista: { x: number; z: number; q: number }[] = [];
+    for (const l of this.grade.values()) {
+      const i = l[0];
+      if (!i || (i.x - this.x) ** 2 + (i.z - this.z) ** 2 > alcance * alcance) continue;
+      lista.push({ x: i.x, z: i.z, q: l.length });
+    }
+    lista.sort((a, b) => b.q - a.q);
+    const r: { x: number; z: number }[] = [];
+    for (const g of lista) {
+      if (r.some((o) => (o.x - g.x) ** 2 + (o.z - g.z) ** 2 < 25)) continue;
+      r.push(g);
+      if (r.length >= n) break;
+    }
+    return r;
+  }
+
+  private contarTipo(id: IdInimigo): number {
+    let n = 0;
+    for (const i of this.inimigos) if (i.vivo && i.def.id === id) n++;
+    return n;
+  }
+
+  /** Cavalo de Troia: o "presente" abre e solta vírus. */
+  private abrirTrojan(i: Inimigo): void {
+    i.vivo = false;
+    i.ataque = undefined;
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      this.criarInimigo(INIMIGOS.virus, i.x + Math.cos(a) * 1.3, i.z + Math.sin(a) * 1.3);
+    }
+    this.brilhos.explosao(i.x, 0.8, i.z, 50, {
+      cor: '#ffd27a',
+      tamanho: 0.3,
+      vida: 0.8,
+      velocidade: 7,
+      gravidade: 4,
+    });
+    this.brilhos.explosao(i.x, 0.8, i.z, 30, {
+      cor: '#39ff88',
+      tamanho: 0.25,
+      vida: 0.7,
+      velocidade: 5,
+    });
+    this.ondaVisual(i.x, i.z, '#39ff88', 4, 0.5);
+    this.audio.tocar('bauAbrir');
+    this.som('inimigoAlerta', {}, 0.5);
+    this.mostrarBanner('ERA UM CAVALO DE TROIA!', 'Vírus à solta', '#39ff88', 2);
+  }
+
+  /** Ponteiro Nulo: some e reaparece na marca, ferindo quem estiver nela. */
+  private saltoPonteiro(i: Inimigo): void {
+    const a = i.ataque!;
+    i.ataque = undefined;
+    this.brilhos.explosao(i.x, 0.8, i.z, 14, { cor: '#ff5c5c', tamanho: 0.25, vida: 0.4 });
+    if (this.autoridade) {
+      i.x = a.ax;
+      i.z = a.az;
+    }
+    this.brilhos.explosao(a.ax, 0.8, a.az, 26, {
+      cor: '#ff5c5c',
+      tamanho: 0.3,
+      vida: 0.5,
+      velocidade: 6,
+    });
+    this.ondaVisual(a.ax, a.az, '#ff5c5c', 1.9, 0.35);
+    this.som('runaErro', { x: a.ax, y: a.az, volume: 0.5 }, 0.1);
+    const antes = this.j;
+    for (const jg of this.jogadores) {
+      if ((jg.x - a.ax) ** 2 + (jg.z - a.az) ** 2 > 1.7 * 1.7) continue;
+      this.j = jg;
+      this.danoJogador(i.dano, a.ax, a.az);
+    }
+    this.j = antes;
+  }
+
+  private criarPocaInimiga(x: number, z: number, raio: number): void {
+    if (this.pocasInimigas.length > 30) {
+      const velha = this.pocasInimigas.shift()!;
+      this.cena.remove(velha.malha);
+    }
+    const malha = new THREE.Mesh(this.geoPoca, this.matPoca.clone());
+    malha.rotation.x = -Math.PI / 2;
+    malha.position.set(x, 0.04, z);
+    malha.scale.setScalar(raio);
+    this.cena.add(malha);
+    this.pocasInimigas.push({ x, z, raio, vida: 7, malha });
+  }
+
+  private atualizarPocasInimigas(dt: number): void {
+    for (const p of this.pocasInimigas) {
+      p.vida -= dt;
+      const m = p.malha.material as THREE.MeshBasicMaterial;
+      m.opacity = Math.min(0.55, p.vida * 0.3) * (0.85 + Math.sin(this.tempo * 3 + p.x) * 0.15);
+      if (p.vida <= 0) this.cena.remove(p.malha);
+      else if (this.rnd() < dt * 2)
+        this.poeira.emitir({
+          x: p.x + (this.rnd() - 0.5) * p.raio,
+          y: 0.1,
+          z: p.z + (this.rnd() - 0.5) * p.raio,
+          vy: 0.8,
+          vida: 0.7,
+          tamanho: 0.16,
+          cor: '#a58bff',
+        });
+    }
+    this.pocasInimigas = this.pocasInimigas.filter((p) => p.vida > 0);
+  }
+
+  /** O jogador local está pisando numa poça de memória vazada? */
+  private naPoca(x: number, z: number): boolean {
+    return this.pocasInimigas.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < p.raio * p.raio);
+  }
+
   private aviso(
     x: number,
     z: number,
@@ -2849,7 +3257,90 @@ export class Partida {
           this.som('runaErro', { x: i.x, y: i.z, volume: 0.3 }, 0.2);
         }
       } else if (c === 'chefe') this.ataqueChefe(i, dt, d, dx, dz);
-      else if (c === 'voador') {
+      else if (c === 'replicar') {
+        i.recarga -= dt;
+        if (i.recarga <= 0) {
+          i.recarga = 6 + this.rnd() * 3;
+          if (this.autoridade && (i.geracao ?? 0) < 2 && this.contarTipo('virus') < 90) {
+            i.geracao = (i.geracao ?? 0) + 1;
+            const a = this.rnd() * Math.PI * 2;
+            const copia = this.criarInimigo(i.def, i.x + Math.cos(a), i.z + Math.sin(a), i.elite);
+            if (copia) {
+              copia.geracao = i.geracao;
+              copia.vida = i.vida;
+              copia.recarga = 6 + this.rnd() * 3;
+            }
+            this.brilhos.explosao(i.x, 0.6, i.z, 12, {
+              cor: '#39ff88',
+              tamanho: 0.2,
+              vida: 0.45,
+              velocidade: 3,
+            });
+            this.som('runaErro', { x: i.x, y: i.z, volume: 0.25, tom: 1.6 }, 0.3);
+          }
+        }
+      } else if (c === 'serpente') {
+        const ang = Math.sin(i.fase * 4) * 0.9;
+        const cs = Math.cos(ang);
+        const sn = Math.sin(ang);
+        const nx = dirX * cs - dirZ * sn;
+        dirZ = dirX * sn + dirZ * cs;
+        dirX = nx;
+        // guarda o caminho para o corpo segmentado seguir a cabeça
+        const r = (i.rastro ??= []);
+        const ux = r.length ? r[0] : i.x;
+        const uz = r.length ? r[1] : i.z;
+        if ((i.x - ux) ** 2 + (i.z - uz) ** 2 > 0.09) {
+          r.unshift(i.x, i.z);
+          if (r.length > 24) r.length = 24;
+        }
+      } else if (c === 'disfarce') {
+        fator = 0;
+        if (!i.ataque && d < 4.5 && i.y < 0.5) {
+          i.ataque = { tipo: 'abrir', t: 0, ax: 0, az: 0 };
+          this.audio.tocar('inimigoTelegrafo', { x: i.x, y: i.z, tom: 1.4 });
+        }
+        if (i.ataque?.tipo === 'abrir') {
+          i.ataque.t += dt;
+          if (i.ataque.t >= 0.7) {
+            this.abrirTrojan(i);
+            continue;
+          }
+        }
+      } else if (c === 'orbitar') {
+        const rr = Math.max(2.4, 7.5 - i.fase * 0.12);
+        const a = Math.atan2(i.z - this.z, i.x - this.x) + 0.9;
+        const tx = this.x + Math.cos(a) * rr - i.x;
+        const tz = this.z + Math.sin(a) * rr - i.z;
+        const td = Math.hypot(tx, tz) || 1;
+        dirX = tx / td;
+        dirZ = tz / td;
+      } else if (c === 'vazar') {
+        i.recarga -= dt;
+        if (i.recarga <= 0) {
+          i.recarga = 1.5;
+          this.criarPocaInimiga(i.x, i.z, i.raio * 1.6);
+        }
+        i.raio = Math.min(i.def.raio * (i.elite ? 1.5 : 1) * 1.8, i.raio + dt * 0.006);
+      } else if (c === 'mirar') {
+        if (i.ataque?.tipo === 'mirar') {
+          fator = 0;
+          i.ataque.t += dt;
+          if (i.ataque.t >= 1.1) {
+            this.saltoPonteiro(i);
+            continue;
+          }
+        } else {
+          i.recarga -= dt;
+          if (i.recarga <= 0 && d < 13 && !parado && this.autoridade) {
+            i.recarga = 5 + this.rnd() * 2;
+            i.ataque = { tipo: 'mirar', t: 0, ax: this.x, az: this.z };
+            this.aviso(this.x, this.z, 1.7, 1.1, '#ff3b3b', () => {});
+            this.som('inimigoTelegrafo', { x: i.x, y: i.z, tom: 1.2 });
+            if (this.rnd() < 0.3) this.vozes.resmungar(i.def.voz, i.x, i.z);
+          }
+        }
+      } else if (c === 'voador') {
         dirX += Math.sin(i.fase * 3) * 0.3;
         dirZ += Math.cos(i.fase * 3) * 0.3;
       }
@@ -2888,7 +3379,7 @@ export class Partida {
         if (!c || i.dano > c.dano) contato.set(this.j, { dano: i.dano, x: i.x, z: i.z });
       }
       // longe demais: reaparece perto (mantém a pressão)
-      if (d > 45 && c !== 'chefe' && this.autoridade) {
+      if (d > 45 && c !== 'chefe' && c !== 'disfarce' && this.autoridade) {
         const p = this.pontoBorda(22);
         i.x = p.x;
         i.z = p.z;
@@ -2933,10 +3424,18 @@ export class Partida {
         this.som('chefeOnda', {}, 0);
         i.ataque = undefined;
       } else if (a.tipo === 'investida' && a.t >= 1.6) i.ataque = undefined;
-      else if (a.tipo === 'invocar' && a.t >= 0.8) {
-        for (let k = 0; k < 10; k++) {
+      else if (a.tipo === 'criptografar' && a.t >= 1.2) {
+        this.criptografar(i);
+        i.ataque = undefined;
+      } else if (a.tipo === 'invocar' && a.t >= 0.8) {
+        const ransom = i.def.id === 'ransomware';
+        for (let k = 0; k < (ransom ? 8 : 10); k++) {
           const ang = (k / 10) * Math.PI * 2;
-          this.criarInimigo(INIMIGOS.spam, i.x + Math.cos(ang) * 3, i.z + Math.sin(ang) * 3);
+          this.criarInimigo(
+            ransom ? INIMIGOS.virus : INIMIGOS.spam,
+            i.x + Math.cos(ang) * 3,
+            i.z + Math.sin(ang) * 3
+          );
         }
         this.brilhos.explosao(i.x, 2, i.z, 40, {
           cor: '#ff6b8a',
@@ -2952,8 +3451,25 @@ export class Partida {
     if (i.recarga <= 0) {
       i.recarga = 3.6;
       const r = this.rnd();
-      const tipo = r < 0.4 ? 'onda' : r < 0.75 ? 'investida' : 'invocar';
+      const tipo: TipoAtaque =
+        i.def.id === 'ransomware'
+          ? r < 0.35
+            ? 'criptografar'
+            : r < 0.65
+              ? 'investida'
+              : r < 0.85
+                ? 'invocar'
+                : 'onda'
+          : r < 0.4
+            ? 'onda'
+            : r < 0.75
+              ? 'investida'
+              : 'invocar';
       i.ataque = { tipo, t: 0, ax: dx / (d || 1), az: dz / (d || 1) };
+      if (tipo === 'criptografar') {
+        this.mostrarBanner('CRIPTOGRAFANDO…', 'Fique longe do cadeado!', '#39ff88', 1.2);
+        this.aviso(i.x, i.z, 9, 1.2, '#39ff88', () => {});
+      }
       if (tipo === 'onda') this.aviso(i.x, i.z, 3.5, 1, '#ff3b3b', () => {});
       if (tipo === 'investida') {
         const m = new THREE.Mesh(
@@ -3121,6 +3637,29 @@ export class Partida {
           { congela }
         );
         if (p.explode > 0) this.explodir(p, h);
+        if ((p.profundidade ?? 0) > 0) {
+          const ramos = (h?.nivel ?? 0) >= 10 ? 3 : 2;
+          for (let k = 0; k < ramos; k++) {
+            const a = p.rot + (k - (ramos - 1) / 2) * 0.9;
+            this.projeteis.push({
+              ...p,
+              vx: Math.sin(a) * vel,
+              vz: Math.cos(a) * vel,
+              escala: p.escala * 0.8,
+              dano: p.dano * 0.75,
+              profundidade: (p.profundidade ?? 1) - 1,
+              perfura: 1,
+              vida: 0.9,
+              atingidos: new Set([i]),
+            });
+          }
+          this.brilhos.explosao(p.x, p.y, p.z, 8, {
+            cor: '#39ff88',
+            tamanho: 0.18,
+            vida: 0.35,
+            velocidade: 4,
+          });
+        }
         if (p.fragmenta && hDef?.id === 'misseis') {
           for (let k = 0; k < 2; k++) {
             const a = p.rot + (k ? 0.8 : -0.8);
@@ -3217,6 +3756,55 @@ export class Partida {
             cor: '#d8fff0',
             ondular: 4,
           });
+      } else if (z.tipo === 'muro') {
+        if (z.segue) {
+          z.x += (this.x - z.x) * Math.min(1, dt * 8);
+          z.z += (this.z - z.z) * Math.min(1, dt * 8);
+          z.malha.position.set(z.x, 0, z.z);
+        }
+        const fade = Math.min(1, z.vida * 2, t * 6);
+        z.malha.scale.set(
+          z.raio * (0.6 + fade * 0.4),
+          0.3 + fade * 0.7,
+          z.raio * (0.6 + fade * 0.4)
+        );
+        ((z.malha.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity =
+          (0.35 + Math.sin(this.tempo * 18) * 0.08) * fade;
+        // barreira: quem está do lado de fora não atravessa
+        for (const i of this.vizinhos(z.x, z.z, z.raio + 1.2, this.tmpLista)) {
+          // chefes e inimigos grandes atravessam (só queimam)
+          if (i.def.comportamento === 'chefe' || i.raio > 0.8) {
+            if (z.tick <= 0 && Math.abs(Math.hypot(i.x - z.x, i.z - z.z) - z.raio) < 1)
+              this.causarDano(i, z.dano, z.hab, 'fogo');
+            continue;
+          }
+          const dx = i.x - z.x;
+          const dz = i.z - z.z;
+          const d = Math.hypot(dx, dz) || 1;
+          if (Math.abs(d - z.raio) < 0.7 + i.raio * 0.5) {
+            const fora = d >= z.raio;
+            const alvo = fora ? z.raio + 0.7 + i.raio * 0.5 : z.raio - 0.7 - i.raio * 0.5;
+            i.x = z.x + (dx / d) * alvo;
+            i.z = z.z + (dz / d) * alvo;
+            if (z.tick <= 0)
+              this.causarDano(i, z.dano, z.hab, 'fogo', dx / d, dz / d, fora ? 4 : -4);
+          }
+        }
+        if (this.rnd() < dt * 40) {
+          const a = this.rnd() * Math.PI * 2;
+          this.brilhos.emitir({
+            x: z.x + Math.cos(a) * z.raio,
+            y: 0.2 + this.rnd() * 0.8,
+            z: z.z + Math.sin(a) * z.raio,
+            vy: 2 + this.rnd() * 2,
+            vida: 0.45,
+            tamanho: 0.28,
+            cor: this.rnd() < 0.5 ? '#ff6a2b' : '#ffd27a',
+          });
+        }
+        if (z.tick <= 0) z.tick = 0.3;
+        if (z.vida <= 0) this.cena.remove(z.malha);
+        continue;
       } else if (z.tipo === 'buraco') {
         z.malha.rotation.y += dt * 4;
         z.malha.scale.setScalar(
@@ -3226,7 +3814,7 @@ export class Partida {
           const dx = z.x - i.x;
           const dz = z.z - i.z;
           const d = Math.hypot(dx, dz) || 1;
-          const res = i.def.id === 'chefe' ? 0.1 : 1;
+          const res = i.def.comportamento === 'chefe' ? 0.1 : 1;
           i.vx += (dx / d) * 30 * dt * res;
           i.vz += (dz / d) * 30 * dt * res;
         }
@@ -3435,7 +4023,7 @@ export class Partida {
       this.mostrarBanner('ÍMÃ DE IDEIAS!', 'Os cristais por perto vêm até você', '#9df0ff', 2);
     } else if (it.tipo === 'bomba') {
       for (const i of this.vizinhos(this.x, this.z, 20, this.tmpLista).slice())
-        this.causarDano(i, i.def.id === 'chefe' ? i.vidaMax * 0.1 : 9999, -1, 'luz');
+        this.causarDano(i, i.def.comportamento === 'chefe' ? i.vidaMax * 0.1 : 9999, -1, 'luz');
       this.ondaVisual(this.x, this.z, '#ffffff', 22, 0.7);
       this.tremer(0.8);
       this.audio.tocar('chefeDerrotado');
@@ -3501,6 +4089,7 @@ export class Partida {
           this.halos.por(jg.x, 0.6, jg.z, 2.4 + jg.resgate * 3, '#7affc1', 0.4 + jg.resgate);
     for (const l of this.lotesInimigos.values()) l.iniciar();
     this.loteOlhos.iniciar();
+    this.loteSegmentos.iniciar();
     for (const l of this.lotesCristal) l.iniciar();
     const cor = this.corTmp;
     const olhoCor = new THREE.Color(this.noite > 0.4 ? '#ff6b5a' : '#fff27a');
@@ -3513,7 +4102,10 @@ export class Partida {
       else if (i.lento > 0) cor.lerp(new THREE.Color('#8fe3ff'), 0.3);
       if (i.queimar > 0) cor.lerp(new THREE.Color('#ff7a3d'), 0.25);
       if (i.veneno > 0) cor.lerp(new THREE.Color('#9dff5c'), 0.25);
-      if (i.flash > 0) cor.setRGB(1, 1, 1);
+      if (i.flash > 0) {
+        if (i.def.comportamento === 'chefe') cor.lerp(new THREE.Color('#ffffff'), 0.35);
+        else cor.setRGB(1, 1, 1);
+      }
       if (i.ataque) cor.lerp(new THREE.Color('#ff3b3b'), 0.4 + Math.sin(this.tempo * 30) * 0.2);
       const pulo =
         i.def.comportamento === 'perseguir' || i.def.comportamento === 'enxame'
@@ -3526,7 +4118,54 @@ export class Partida {
         i.def.comportamento === 'teleporte' && Math.sin(i.fase * 23) > 0.92
           ? (this.rnd() - 0.5) * 0.4
           : 0;
-      lote.por(i.x + glitch, y, i.z, esc * (2 - sq), esc * sq, esc * (2 - sq), 0, i.ang, 0, cor);
+      // Cavalo de Troia: tremendo quando vai abrir; brilha como um presente
+      const tremor = i.ataque?.tipo === 'abrir' ? (this.rnd() - 0.5) * 0.25 : 0;
+      lote.por(
+        i.x + glitch + tremor,
+        y,
+        i.z,
+        esc * (2 - sq),
+        esc * sq,
+        esc * (2 - sq),
+        0,
+        i.def.comportamento === 'disfarce' ? this.tempo * 0.6 : i.ang,
+        0,
+        cor
+      );
+      if (i.def.comportamento === 'disfarce')
+        this.halos.por(i.x, 0.8, i.z, 3 + Math.sin(this.tempo * 3) * 0.4, '#ffd27a', 1.1);
+      else if (i.def.id === 'ransomware' || i.def.id === 'virus')
+        this.halos.por(
+          i.x,
+          y + i.def.altura * 0.5 * esc,
+          i.z,
+          i.raio * (i.def.id === 'virus' ? 2.4 : 1.6),
+          '#39ff88',
+          i.def.id === 'virus' ? 0.35 : 0.18
+        );
+      if (i.rastro) {
+        // corpo do Worm: segmentos seguindo o caminho da cabeça
+        const seg = cor.clone().multiplyScalar(0.85);
+        for (let k = 1; k <= 5; k++) {
+          const idx = Math.min(i.rastro.length - 2, k * 4);
+          if (idx < 0) break;
+          const sx = i.rastro[idx - (idx % 2)];
+          const sz = i.rastro[idx - (idx % 2) + 1];
+          const r = esc * (0.36 - k * 0.04);
+          this.loteSegmentos.por(
+            sx,
+            r + Math.abs(Math.sin(i.fase * 9 + k)) * 0.08,
+            sz,
+            r,
+            r,
+            r,
+            0,
+            0,
+            0,
+            seg
+          );
+        }
+      }
       const o = OLHOS[i.def.id];
       const cs = Math.cos(i.ang);
       const sn = Math.sin(i.ang);
@@ -3581,6 +4220,7 @@ export class Partida {
     }
     for (const l of this.lotesInimigos.values()) l.concluir();
     this.loteOlhos.concluir();
+    this.loteSegmentos.concluir();
     this.loteOrbita.concluir();
     for (const l of this.lotesProj.values()) l.concluir();
     for (const l of this.lotesCristal) l.concluir();
@@ -3656,7 +4296,7 @@ export class Partida {
         (i.queimar > 0 ? 8 : 0) |
         (i.veneno > 0 ? 16 : 0) |
         (i.atordoado > 0 ? 32 : 0);
-      const at = i.ataque ? ['onda', 'investida', 'invocar'].indexOf(i.ataque.tipo) + 1 : 0;
+      const at = i.ataque ? TIPOS_ATAQUE.indexOf(i.ataque.tipo) + 1 : 0;
       ini.push(
         i.id,
         tipos.indexOf(i.def.id),
@@ -3671,7 +4311,9 @@ export class Partida {
         at,
         i.ataque ? Math.round(i.ataque.t * 100) : 0,
         Math.round(i.vel * 100),
-        Math.round(i.dano * 10)
+        Math.round(i.dano * 10),
+        i.ataque ? Math.round(i.ataque.ax * 100) : 0,
+        i.ataque ? Math.round(i.ataque.az * 100) : 0
       );
     }
     const itTipos: Item['tipo'][] = ['coracao', 'ima', 'bomba', 'bau'];
@@ -3694,6 +4336,7 @@ export class Partida {
         Math.round(jg.resgate * 100),
         jg.ausente ? 1 : 0,
         Math.round(jg.invencivel * 100),
+        [...jg.bloqueios].flat(),
       ]),
       ini,
       it: this.itens.map((it) => [
@@ -3718,9 +4361,22 @@ export class Partida {
     this.xpProximo = Number(m.xpp);
     this.abates = Number(m.ab);
     this.chefesDerrotados = Number(m.cd);
-    for (const [indice, vida, caido, resgate, ausente, inv] of m.jg as number[][]) {
+    for (const [indice, vida, caido, resgate, ausente, inv, travas] of m.jg as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number[],
+    ][]) {
       const jg = this.jogadores.find((x) => x.indice === indice);
       if (!jg) continue;
+      const antes = jg.bloqueios.size;
+      jg.bloqueios.clear();
+      for (let k = 0; k + 1 < (travas?.length ?? 0); k += 2)
+        jg.bloqueios.set(travas[k], travas[k + 1]);
+      if (jg.local && jg.bloqueios.size > antes) this.som('runaErro', {}, 0.2);
       if (vida < jg.vida - 0.5 && !caido) this.sentirDano(jg);
       jg.vida = vida;
       if (caido && !jg.caido && jg.local) this.audio.tocar('derrota');
@@ -3736,7 +4392,7 @@ export class Partida {
     const ini = m.ini as number[];
     const porId = new Map(this.inimigos.map((i) => [i.id, i]));
     const vistos = new Set<number>();
-    const N = 14;
+    const N = 16;
     for (let k = 0; k + N <= ini.length; k += N) {
       const id = ini[k];
       vistos.add(id);
@@ -3792,9 +4448,11 @@ export class Partida {
       i.raio = ini[k + 9] / 100;
       const at = ini[k + 10];
       if (at > 0) {
-        const tipo = (['onda', 'investida', 'invocar'] as const)[at - 1];
-        if (!i.ataque || i.ataque.tipo !== tipo)
-          i.ataque = { tipo, t: ini[k + 11] / 100, ax: 0, az: 0 };
+        const tipo = TIPOS_ATAQUE[at - 1];
+        if (!i.ataque || i.ataque.tipo !== tipo) {
+          i.ataque = { tipo, t: ini[k + 11] / 100, ax: ini[k + 14] / 100, az: ini[k + 15] / 100 };
+          if (tipo === 'mirar') this.aviso(i.ataque.ax, i.ataque.az, 1.7, 1.1, '#ff3b3b', () => {});
+        }
       } else i.ataque = undefined;
       i.vel = ini[k + 12] / 100;
       i.dano = ini[k + 13] / 10;
@@ -3982,6 +4640,25 @@ export class Partida {
     this.aoMudar();
   }
 
+  /** Força o próximo ataque do chefe (testes). */
+  depurarAtaqueChefe(tipo: TipoAtaque): void {
+    const c = this.chefeAtual;
+    if (c) c.ataque = { tipo, t: 0, ax: 0, az: 0 };
+  }
+
+  /** Cria inimigos de um tipo em volta do jogador local. */
+  depurarInimigo(id: IdInimigo, n = 1, dist = 7): void {
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + 0.3;
+      const i = this.criarInimigo(
+        INIMIGOS[id],
+        this.x + Math.cos(a) * dist,
+        this.z + Math.sin(a) * dist
+      );
+      if (i && i.def.comportamento === 'chefe') this.chefeAtual = i;
+    }
+  }
+
   /** Avança o relógio da partida (hordas e chefes acontecem no próximo passo). */
   depurarTempo(t: number): void {
     this.tempo = t;
@@ -4036,6 +4713,11 @@ export class Partida {
   }
 
   /** Estado das habilidades para o HUD (fração de recarga 0..1). */
+  /** A habilidade do HUD (do jogador local) está travada pelo Ransomware? */
+  travada(idx: number): boolean {
+    return (this.local.bloqueios.get(idx) ?? 0) > this.tempo;
+  }
+
   slotsHud(): {
     id: string;
     icone: string;
@@ -4043,6 +4725,7 @@ export class Partida {
     nivel: number;
     recarga: number;
     nome: string;
+    travada: boolean;
   }[] {
     return this.habs.map((h) => {
       const v = valoresHabilidade(h.def, h.nivel, this.atributos);
@@ -4061,6 +4744,7 @@ export class Partida {
         nivel: h.nivel,
         recarga: cont ? 0 : Math.max(0, Math.min(1, h.timer / total)),
         nome: h.def.nome,
+        travada: this.travada(h.idx),
       };
     });
   }

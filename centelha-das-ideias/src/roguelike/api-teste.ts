@@ -36,6 +36,8 @@ export function instalarApiSobrevivencia(p: Partida, ui?: InterfaceSobrevivencia
     xp: (v: number) => p.depurarXp(v),
     habilidade: (id: string, nivel = 1) => p.depurarHabilidade(id, nivel),
     tempo: (t: number) => p.depurarTempo(t),
+    inimigo: (id: string, n = 1, dist = 7) => p.depurarInimigo(id as never, n, dist),
+    ataqueChefe: (tipo: string) => p.depurarAtaqueChefe(tipo as never),
     invencivel: (s = 9999) => {
       p.invencivel = s;
     },

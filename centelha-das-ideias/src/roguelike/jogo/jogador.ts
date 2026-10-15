@@ -62,6 +62,8 @@ export class Jogador {
   escolheu = true;
   /** Última posição recebida pela rede (jogadores remotos). */
   rede = { x: 0, z: 0, vx: 0, vz: 0, angulo: 0, dash: false, t: 0 };
+  /** Habilidades travadas pelo Ransomware: código da habilidade → até quando (tempo de jogo). */
+  bloqueios = new Map<number, number>();
   /** Pausa local do dono (o jogo continua para os outros). */
   ausente = false;
 
