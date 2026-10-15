@@ -4,8 +4,10 @@
  */
 import type { IdPersonagem } from './dados/personagens';
 import type { Partida } from './jogo/partida';
+import type { InterfaceSobrevivencia } from './ui';
 
-export function instalarApiSobrevivencia(p: Partida): void {
+export function instalarApiSobrevivencia(p: Partida, ui?: InterfaceSobrevivencia): void {
+  let convite: { codigo: string; aceitar: (r: string) => Promise<void> } | null = null;
   const api = {
     estado: () => ({
       estado: p.estado,
@@ -45,6 +47,40 @@ export function instalarApiSobrevivencia(p: Partida): void {
     menu: () => p.voltarMenu(),
     relatorio: () => p.relatorio(),
     direcaoRobo: () => p.depurarDirecao(),
+    // multijogador
+    mpCriarSala: async () => {
+      await ui?.sala.hospedar();
+    },
+    mpConvite: async () => {
+      convite = (await ui?.sala.gerarConvite()) ?? null;
+      return convite?.codigo ?? '';
+    },
+    mpAceitar: async (resposta: string) => {
+      await convite?.aceitar(resposta);
+    },
+    mpEntrar: async (codigo: string) => (await ui?.sala.entrarComConvite(codigo)) ?? '',
+    mpEntrarLan: async () => {
+      await ui?.sala.entrarRedeLocal();
+    },
+    mpIniciar: () => ui?.sala.sessao?.iniciarPartida(),
+    mpSala: () => {
+      const s = ui?.sala.sessao;
+      return s ? { papel: s.papel, membros: s.membros, meuIndice: s.meuIndice } : null;
+    },
+    mpJogadores: () =>
+      p.jogadores.map((jg) => ({
+        indice: jg.indice,
+        local: jg.local,
+        personagem: jg.personagemId,
+        x: Math.round(jg.x * 10) / 10,
+        z: Math.round(jg.z * 10) / 10,
+        vida: Math.round(jg.vida),
+        caido: jg.caido,
+        escolheu: jg.escolheu,
+        ativas: jg.build.ativas.map((a) => `${a.id}:${a.nivel}`),
+        passivas: jg.build.passivas.map((a) => `${a.id}:${a.nivel}`),
+      })),
+    mpEscolher: (i: number) => p.escolherOferta(i),
   };
   (window as unknown as { __sobrevivencia: typeof api }).__sobrevivencia = api;
 }

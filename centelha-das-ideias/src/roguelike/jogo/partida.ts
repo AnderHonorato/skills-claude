@@ -47,11 +47,27 @@ import {
 import { criarArena, RAIO_ARENA, type Arena } from '../render/arena';
 import { geometriaInimigo, geometriaProjetil, OLHOS, type FormaProjetil } from '../render/formas';
 import { Halos, Lote } from '../render/instancias';
+import type { Mensagem } from '../rede/canal';
 import { Vozes } from '../voz';
+import { Jogador, MAX_JOGADORES, type HabAtiva } from './jogador';
+
+/** Ganchos que o multijogador instala na partida. */
+export interface GanchosRede {
+  /** Chamado a cada passo da simulação (envia posições, estado…). */
+  aposPasso(dt: number): void;
+  /** O anfitrião abriu um nível: manda as cartas para os convidados. */
+  nivelAberto(): void;
+  /** Este aparelho (convidado) escolheu/sorteou cartas. */
+  escolha(i: number): void;
+  rerrolar(): void;
+  /** Anfitrião: a partida terminou. */
+  fim(): void;
+}
 
 export type EstadoPartida = 'menu' | 'jogando' | 'nivel' | 'pausa' | 'fim';
 
 interface Inimigo {
+  id: number;
   def: DefInimigo;
   x: number;
   z: number;
@@ -142,6 +158,8 @@ interface Onda {
   forca: number;
   atingidos: Set<Inimigo>;
   malha: THREE.Mesh;
+  /** Onda do chefe: jogadores já atingidos. */
+  jogadores?: Set<number>;
 }
 
 interface Aviso {
@@ -162,22 +180,22 @@ interface EfeitoVisual {
   atualizar?: (t: number) => void;
 }
 
-interface HabAtiva {
-  def: DefHabilidade;
-  idx: number;
-  nivel: number;
-  timer: number;
-  ativaAte: number;
-  fase: number;
-  danoTotal: number;
-  disparos: number;
-}
-
 interface Item {
+  id: number;
   tipo: 'coracao' | 'ima' | 'bomba' | 'bau';
   x: number;
   z: number;
   malha: THREE.Object3D;
+}
+
+/** Cristal de experiência no chão; `alvo` = jogador que o está puxando. */
+export interface Cristal {
+  x: number;
+  z: number;
+  t: number;
+  atraido: boolean;
+  fase: number;
+  alvo?: number;
 }
 
 export interface NumeroDano {
@@ -211,35 +229,189 @@ export class Partida {
   qualidade: 'alta' | 'media' | 'baixa';
 
   estado: EstadoPartida = 'menu';
-  personagemId: IdPersonagem = 'claude';
-  def: DefPersonagem = personagem('claude');
-  modelo!: ModeloClaude;
 
-  // jogador
-  x = 0;
-  z = 0;
-  vx = 0;
-  vz = 0;
-  angulo = 0;
-  dirX = 0;
-  dirZ = 1;
-  vida = 100;
-  invencivel = 0;
-  dash = 0;
-  recargaDash = 0;
-  private dashX = 0;
-  private dashZ = 0;
-  humor: Humor = 'neutro';
-  private humorT = 0;
-  atributos: Atributos = calcularAtributos({}, { ativas: [], passivas: [] });
-  build: EstadoBuild = { ativas: [], passivas: [] };
-  habs: HabAtiva[] = [];
+  // jogadores: no solo há um; no multijogador local, até quatro
+  jogadores: Jogador[] = [new Jogador(0, 'claude', true)];
+  /** O jogador deste aparelho. */
+  local: Jogador = this.jogadores[0];
+  /** Jogador em contexto: os campos abaixo (x, vida, habs…) apontam para ele. */
+  j: Jogador = this.local;
+  /** Multijogador: papel deste aparelho e ganchos da rede. */
+  papel: 'solo' | 'anfitriao' | 'convidado' = 'solo';
+  rede: GanchosRede | null = null;
+
+  get x(): number {
+    return this.j.x;
+  }
+  set x(v: number) {
+    this.j.x = v;
+  }
+
+  get z(): number {
+    return this.j.z;
+  }
+  set z(v: number) {
+    this.j.z = v;
+  }
+
+  get vx(): number {
+    return this.j.vx;
+  }
+  set vx(v: number) {
+    this.j.vx = v;
+  }
+
+  get vz(): number {
+    return this.j.vz;
+  }
+  set vz(v: number) {
+    this.j.vz = v;
+  }
+
+  get angulo(): number {
+    return this.j.angulo;
+  }
+  set angulo(v: number) {
+    this.j.angulo = v;
+  }
+
+  get dirX(): number {
+    return this.j.dirX;
+  }
+  set dirX(v: number) {
+    this.j.dirX = v;
+  }
+
+  get dirZ(): number {
+    return this.j.dirZ;
+  }
+  set dirZ(v: number) {
+    this.j.dirZ = v;
+  }
+
+  get vida(): number {
+    return this.j.vida;
+  }
+  set vida(v: number) {
+    this.j.vida = v;
+  }
+
+  get invencivel(): number {
+    return this.j.invencivel;
+  }
+  set invencivel(v: number) {
+    this.j.invencivel = v;
+  }
+
+  get dash(): number {
+    return this.j.dash;
+  }
+  set dash(v: number) {
+    this.j.dash = v;
+  }
+
+  get recargaDash(): number {
+    return this.j.recargaDash;
+  }
+  set recargaDash(v: number) {
+    this.j.recargaDash = v;
+  }
+
+  get dashX(): number {
+    return this.j.dashX;
+  }
+  set dashX(v: number) {
+    this.j.dashX = v;
+  }
+
+  get dashZ(): number {
+    return this.j.dashZ;
+  }
+  set dashZ(v: number) {
+    this.j.dashZ = v;
+  }
+
+  get humor(): Humor {
+    return this.j.humor;
+  }
+  set humor(v: Humor) {
+    this.j.humor = v;
+  }
+
+  get humorT(): number {
+    return this.j.humorT;
+  }
+  set humorT(v: number) {
+    this.j.humorT = v;
+  }
+
+  get atributos(): Atributos {
+    return this.j.atributos;
+  }
+  set atributos(v: Atributos) {
+    this.j.atributos = v;
+  }
+
+  get build(): EstadoBuild {
+    return this.j.build;
+  }
+  set build(v: EstadoBuild) {
+    this.j.build = v;
+  }
+
+  get habs(): HabAtiva[] {
+    return this.j.habs;
+  }
+  set habs(v: HabAtiva[]) {
+    this.j.habs = v;
+  }
+
+  get ofertas(): Oferta[] {
+    return this.j.ofertas;
+  }
+  set ofertas(v: Oferta[]) {
+    this.j.ofertas = v;
+  }
+
+  get rerrolagens(): number {
+    return this.j.rerrolagens;
+  }
+  set rerrolagens(v: number) {
+    this.j.rerrolagens = v;
+  }
+
+  get ultimaFalaDano(): number {
+    return this.j.ultimaFalaDano;
+  }
+  set ultimaFalaDano(v: number) {
+    this.j.ultimaFalaDano = v;
+  }
+
+  get def(): DefPersonagem {
+    return this.j.def;
+  }
+  set def(v: DefPersonagem) {
+    this.j.def = v;
+  }
+
+  get modelo(): ModeloClaude {
+    return this.j.modelo;
+  }
+  set modelo(v: ModeloClaude) {
+    this.j.modelo = v;
+  }
+
+  get personagemId(): IdPersonagem {
+    return this.j.personagemId;
+  }
+  set personagemId(v: IdPersonagem) {
+    this.j.personagemId = v;
+  }
+
   nivel = 1;
   xp = 0;
   xpProximo = xpParaNivel(1);
   niveisPendentes = 0;
-  ofertas: Oferta[] = [];
-  rerrolagens = 2;
   tempo = 0;
   abates = 0;
   ouro = 0;
@@ -260,8 +432,9 @@ export class Partida {
   private avisos: Aviso[] = [];
   private efeitos: EfeitoVisual[] = [];
   private itens: Item[] = [];
-  private cristais: { x: number; z: number; t: number; atraido: boolean; fase: number }[] = [];
+  private cristais: Cristal[] = [];
   private acumulado = 0;
+  private proximoId = 1;
   private rnd = criarAleatorio(Date.now() & 0xffff);
   private grade = new Map<number, Inimigo[]>();
   private lotesInimigos = new Map<IdInimigo, Lote>();
@@ -279,9 +452,10 @@ export class Partida {
   private qTmp = new THREE.Quaternion();
   private eTmp = new THREE.Euler();
   private menuGiro = 0;
+  private nivelDesde = 0;
   private noite = 0;
-  private ultimaFalaDano = 0;
   private anelMagnetico: THREE.Mesh;
+  private aurasJogador = new Map<Jogador, THREE.Mesh>();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -474,6 +648,7 @@ export class Partida {
   }
 
   falar(tipo: keyof DefPersonagem['falas'], prioridade = false): void {
+    if (!this.j.local) return;
     const l = this.def.falas[tipo];
     this.vozes.falar(l[Math.floor(Math.random() * l.length)], this.def.voz, prioridade);
   }
@@ -485,14 +660,80 @@ export class Partida {
   // ------------------------------------------------------------------ início
 
   escolherPersonagem(id: IdPersonagem): void {
-    this.personagemId = id;
-    this.def = personagem(id);
-    if (this.modelo) {
-      this.cena.remove(this.modelo.raiz, this.modelo.sombraContato);
+    this.trocarModelo(this.local, id);
+  }
+
+  private trocarModelo(jg: Jogador, id: IdPersonagem): void {
+    this.cena.remove(jg.modelo.raiz, jg.modelo.sombraContato);
+    jg.trocarPersonagem(id);
+    this.cena.add(jg.modelo.raiz, jg.modelo.sombraContato);
+    jg.modelo.raiz.position.set(jg.x, 0, jg.z);
+  }
+
+  /** Multijogador: define quem está na partida (índice 0 = anfitrião). */
+  configurarJogadores(
+    lista: { indice: number; personagem: IdPersonagem }[],
+    meuIndice: number,
+    papel: 'solo' | 'anfitriao' | 'convidado'
+  ): void {
+    for (const jg of this.jogadores) this.cena.remove(jg.modelo.raiz, jg.modelo.sombraContato);
+    for (const m of this.aurasJogador.values()) this.cena.remove(m);
+    this.aurasJogador.clear();
+    this.papel = papel;
+    this.jogadores = lista
+      .slice()
+      .sort((a, b) => a.indice - b.indice)
+      .map((d) => new Jogador(d.indice, d.personagem, d.indice === meuIndice));
+    this.local = this.jogadores.find((jg) => jg.local) ?? this.jogadores[0];
+    this.j = this.local;
+    for (const jg of this.jogadores) this.cena.add(jg.modelo.raiz, jg.modelo.sombraContato);
+    this.aoMudar();
+  }
+
+  /** Volta ao jogo solo com o personagem do jogador local. */
+  modoSolo(): void {
+    const id = this.local.personagemId;
+    this.rede = null;
+    this.configurarJogadores([{ indice: 0, personagem: id }], 0, 'solo');
+  }
+
+  /** Jogador dono de uma habilidade (pelo código `idx`). */
+  private donoHab(codigo: number): Jogador | undefined {
+    if (codigo < 0) return undefined;
+    const indice = Math.floor(codigo / HABILIDADES.length);
+    return this.jogadores.find((jg) => jg.indice === indice);
+  }
+
+  private habDe(codigo: number): HabAtiva | undefined {
+    return this.donoHab(codigo)?.habs.find((h) => h.idx === codigo);
+  }
+
+  /** Jogadores que podem agir (não caídos nem ausentes). */
+  private ativos(): Jogador[] {
+    return this.jogadores.filter((jg) => !jg.caido && !jg.ausente);
+  }
+
+  private maisProximoJogador(x: number, z: number): Jogador | null {
+    let melhor: Jogador | null = null;
+    let md = Infinity;
+    for (const jg of this.jogadores) {
+      if (jg.caido || jg.ausente) continue;
+      const d = (jg.x - x) ** 2 + (jg.z - z) ** 2;
+      if (d < md) {
+        md = d;
+        melhor = jg;
+      }
     }
-    this.modelo = new ModeloClaude(this.def.aparencia);
-    this.cena.add(this.modelo.raiz, this.modelo.sombraContato);
-    this.modelo.raiz.position.set(this.x, 0, this.z);
+    return melhor;
+  }
+
+  get autoridade(): boolean {
+    return this.papel !== 'convidado';
+  }
+
+  /** Pausa só deste aparelho (multijogador: o jogo segue para os outros). */
+  get pausaLocal(): boolean {
+    return this.papel !== 'solo' && this.local.ausente;
   }
 
   private semearCristais(): void {
@@ -547,15 +788,31 @@ export class Partida {
     this.semearCristais();
     this.limparLotesSimulacao();
     this.halos.marcar();
-    this.x = this.z = this.vx = this.vz = 0;
-    this.build = { ativas: [{ id: this.def.habilidadeInicial, nivel: 1 }], passivas: [] };
-    this.atualizarBuild();
-    this.vida = this.atributos.vidaMaxima;
+    for (const jg of this.jogadores) {
+      this.j = jg;
+      // em grupo, cada um começa num ponto de um pequeno círculo
+      const n = this.jogadores.length;
+      const a = (jg.indice / Math.max(1, n)) * Math.PI * 2;
+      this.x = n > 1 ? Math.cos(a) * 2.5 : 0;
+      this.z = n > 1 ? Math.sin(a) * 2.5 : 0;
+      this.vx = this.vz = 0;
+      jg.rede = { x: this.x, z: this.z, vx: 0, vz: 0, angulo: 0, dash: false, t: 0 };
+      this.habs = [];
+      this.build = { ativas: [{ id: this.def.habilidadeInicial, nivel: 1 }], passivas: [] };
+      this.atualizarBuild();
+      this.vida = this.atributos.vidaMaxima;
+      this.rerrolagens = 2;
+      this.invencivel = 1.5;
+      jg.caido = false;
+      jg.resgate = 0;
+      jg.escolheu = true;
+      jg.ausente = false;
+    }
+    this.j = this.local;
     this.nivel = 1;
     this.xp = 0;
     this.xpProximo = xpParaNivel(1);
     this.niveisPendentes = 0;
-    this.rerrolagens = 2;
     this.tempo = 0;
     this.abates = 0;
     this.ouro = 0;
@@ -564,7 +821,6 @@ export class Partida {
     this.proximoChefe = INTERVALO_CHEFE;
     this.chefesDerrotados = 0;
     this.chefeAtual = null;
-    this.invencivel = 1.5;
     this.estado = 'jogando';
     this.audio.musica('jardim');
     this.mostrarBanner('Sobreviva ao Ruído', `${this.def.nome} — ${this.def.titulo}`, this.def.cor);
@@ -590,7 +846,7 @@ export class Partida {
         ? { ...ant, nivel: s.nivel }
         : {
             def,
-            idx: HABILIDADES.indexOf(def),
+            idx: this.j.indice * HABILIDADES.length + HABILIDADES.indexOf(def),
             nivel: s.nivel,
             timer: 0.3,
             ativaAte: 0,
@@ -609,7 +865,10 @@ export class Partida {
   // ------------------------------------------------------------------ níveis
 
   private ganharXp(v: number): void {
-    this.xp += v * this.atributos.xp;
+    if (!this.autoridade) return;
+    // em grupo a experiência é de todos: usa o melhor bônus de sabedoria do time
+    const mult = Math.max(...this.jogadores.map((jg) => jg.atributos.xp));
+    this.xp += v * mult;
     while (this.xp >= this.xpProximo) {
       this.xp -= this.xpProximo;
       this.nivel++;
@@ -621,8 +880,19 @@ export class Partida {
 
   private abrirNivel(): void {
     this.estado = 'nivel';
-    const qtd = this.rnd() < this.atributos.sorte * 2 ? 4 : 3;
-    this.ofertas = gerarOfertas(this.build, this.rnd, qtd);
+    this.nivelDesde = this.tempoReal();
+    for (const jg of this.jogadores) {
+      if (jg.caido) {
+        jg.escolheu = true;
+        jg.ofertas = [];
+        continue;
+      }
+      const qtd = this.rnd() < jg.atributos.sorte * 2 ? 4 : 3;
+      jg.ofertas = gerarOfertas(jg.build, this.rnd, qtd);
+      jg.escolheu = false;
+    }
+    this.j = this.local;
+    this.rede?.nivelAberto();
     this.audio.tocar('comemoracao');
     this.brilhos.explosao(this.x, 1, this.z, 40, {
       cor: '#ffd27a',
@@ -637,9 +907,28 @@ export class Partida {
   }
 
   escolherOferta(i: number): void {
-    if (this.estado !== 'nivel') return;
+    if (this.estado !== 'nivel' || this.local.escolheu) return;
+    if (this.papel === 'convidado') {
+      if (!this.local.ofertas[i]) return;
+      this.local.escolheu = true;
+      this.audio.tocar('uiConfirmar');
+      this.rede?.escolha(i);
+      this.aoMudar();
+      return;
+    }
+    this.aplicarEscolha(this.local, i);
+  }
+
+  /** Anfitrião/solo: aplica a carta escolhida por um jogador. */
+  aplicarEscolha(jg: Jogador, i: number): void {
+    if (this.estado !== 'nivel' || jg.escolheu) return;
+    this.j = jg;
     const o = this.ofertas[i];
-    if (!o) return;
+    if (!o) {
+      this.j = this.local;
+      return;
+    }
+    jg.escolheu = true;
     if (o.tipo === 'cura')
       this.vida = Math.min(this.atributos.vidaMaxima, this.vida + this.atributos.vidaMaxima * 0.3);
     else if (o.tipo === 'ouro') this.ouro += 25;
@@ -654,11 +943,12 @@ export class Partida {
           def.cor,
           3.5
         );
-        this.vozes.falar(
-          this.def.falas.evolucao[Math.floor(Math.random() * this.def.falas.evolucao.length)],
-          this.def.voz,
-          true
-        );
+        if (jg.local)
+          this.vozes.falar(
+            this.def.falas.evolucao[Math.floor(Math.random() * this.def.falas.evolucao.length)],
+            this.def.voz,
+            true
+          );
         this.sentir('determinado', 3);
         this.ondaVisual(this.x, this.z, def.cor, 9, 0.8);
         this.brilhos.explosao(this.x, 1, this.z, 90, {
@@ -673,24 +963,48 @@ export class Partida {
       } else this.audio.tocar('uiConfirmar');
       if (o.tipo === 'passiva' && o.id === 'vigor') this.vida += 12;
     }
+    this.j = this.local;
+    if (this.jogadores.some((x) => !x.escolheu)) {
+      this.rede?.nivelAberto();
+      this.aoMudar();
+      return;
+    }
     this.niveisPendentes--;
     if (this.niveisPendentes > 0) this.abrirNivel();
     else {
       this.estado = 'jogando';
-      this.invencivel = Math.max(this.invencivel, 0.6);
+      for (const x of this.jogadores) x.invencivel = Math.max(x.invencivel, 0.6);
+      this.rede?.nivelAberto();
     }
     this.aoMudar();
   }
 
   rerrolar(): void {
-    if (this.estado !== 'nivel' || this.rerrolagens <= 0) return;
-    this.rerrolagens--;
-    this.ofertas = gerarOfertas(this.build, this.rnd, this.ofertas.length);
-    this.audio.tocar('uiNavegar');
+    if (this.estado !== 'nivel' || this.local.escolheu || this.local.rerrolagens <= 0) return;
+    if (this.papel === 'convidado') {
+      this.rede?.rerrolar();
+      return;
+    }
+    this.rerrolarJogador(this.local);
+  }
+
+  /** Anfitrião/solo: sorteia de novo as cartas de um jogador. */
+  rerrolarJogador(jg: Jogador): void {
+    if (this.estado !== 'nivel' || jg.escolheu || jg.rerrolagens <= 0) return;
+    jg.rerrolagens--;
+    jg.ofertas = gerarOfertas(jg.build, this.rnd, jg.ofertas.length);
+    if (jg.local) this.audio.tocar('uiNavegar');
+    this.rede?.nivelAberto();
     this.aoMudar();
   }
 
   pausar(p: boolean): void {
+    if (this.papel !== 'solo') {
+      // em grupo a partida não para: só este jogador fica de fora (e protegido)
+      if (this.estado === 'jogando' || this.estado === 'nivel') this.local.ausente = p;
+      this.aoMudar();
+      return;
+    }
     if (p && this.estado === 'jogando') this.estado = 'pausa';
     else if (!p && this.estado === 'pausa') this.estado = 'jogando';
     this.aoMudar();
@@ -713,13 +1027,17 @@ export class Partida {
     VENTO.forca.value = 0.55 + Math.sin(VENTO.tempo.value * 0.15) * 0.25;
     const ent = this.entrada;
     if (ent.apertou('pausa')) {
-      if (this.estado === 'jogando') this.pausar(true);
+      if (this.papel !== 'solo') this.pausar(!this.local.ausente);
+      else if (this.estado === 'jogando') this.pausar(true);
       else if (this.estado === 'pausa') this.pausar(false);
     }
     if (this.estado === 'nivel') {
       for (let k = 0; k < 4; k++)
         if (ent.apertou(`arma${k + 1}` as 'arma1')) this.escolherOferta(k);
       if (ent.apertou('conectar')) this.rerrolar();
+      // grupo: quem demora demais recebe a primeira carta
+      if (this.papel === 'anfitriao' && this.tempoReal() - this.nivelDesde > 30)
+        for (const jg of this.jogadores) if (!jg.escolheu) this.aplicarEscolha(jg, 0);
     }
     if (this.estado === 'jogando') {
       if (this.congelado > 0) this.congelado -= dt;
@@ -730,6 +1048,7 @@ export class Partida {
         this.halos.marcar();
       }
     }
+    if (this.estado !== 'menu') this.rede?.aposPasso(dt);
     if (this.banner) {
       this.banner.vida -= dt;
       if (this.banner.vida <= 0) this.banner = null;
@@ -745,15 +1064,86 @@ export class Partida {
 
   private simular(dt: number): void {
     this.tempo += dt;
+    // ------------------- jogadores
+    for (const jg of this.jogadores) {
+      this.j = jg;
+      if (jg.local) this.moverLocal(dt);
+      else this.moverRemoto(dt);
+    }
+    this.j = this.local;
+    if (this.autoridade) this.atualizarResgates(dt);
+
+    // ------------------- tempo: hordas, chefes, noite
+    this.noite = Math.min(1, Math.max(0, (this.tempo - 200) / 360));
+    if (this.tempo >= this.proximaHorda) {
+      this.proximaHorda += INTERVALO_HORDA;
+      this.horda();
+    }
+    if (this.tempo >= this.proximoChefe) {
+      this.proximoChefe += INTERVALO_CHEFE;
+      this.surgirChefe();
+    }
+    this.acumulado += taxaSurgimento(this.tempo) * dt;
+    while (this.acumulado >= 1) {
+      this.acumulado -= 1;
+      this.surgirAleatorio();
+    }
+
+    // ------------------- grade espacial
+    this.grade.clear();
+    for (const i of this.inimigos) {
+      const k = this.chave(i.x, i.z);
+      let l = this.grade.get(k);
+      if (!l) this.grade.set(k, (l = []));
+      l.push(i);
+    }
+
+    // ------------------- habilidades (de cada jogador, no contexto dele)
+    for (const jg of this.jogadores) {
+      if (jg.caido || jg.ausente) continue;
+      this.j = jg;
+      for (const h of jg.habs) this.atualizarHabilidade(h, dt);
+    }
+    this.j = this.local;
+
+    // ------------------- inimigos, projéteis, zonas, ondas, avisos
+    this.atualizarInimigos(dt);
+    this.atualizarProjeteis(dt);
+    this.atualizarZonas(dt);
+    this.atualizarOndas(dt);
+    this.atualizarAvisos(dt);
+    this.atualizarCristais(dt);
+    this.atualizarItens(dt);
+    for (const n of this.numeros) {
+      n.vida -= dt;
+      n.y += dt * 1.4;
+    }
+    this.numeros = this.numeros.filter((n) => n.vida > 0);
+    if (this.numeros.length > 70) this.numeros.splice(0, this.numeros.length - 70);
+
+    this.j = this.local;
+    if (this.autoridade)
+      for (const jg of this.jogadores)
+        if (!jg.caido && jg.vida <= 0) {
+          if (this.papel === 'solo') {
+            this.morrer();
+            return;
+          }
+          this.cair(jg);
+        }
+  }
+
+  /** Movimento do jogador deste aparelho (teclado/toque). */
+  private moverLocal(dt: number): void {
     const at = this.atributos;
-    // ------------------- jogador
     const ent = this.entrada;
-    const m = ent.movimento();
+    const parado = this.j.caido || this.j.ausente;
+    const m = parado ? { x: 0, y: 0 } : ent.movimento();
     const mag = Math.min(1, Math.hypot(m.x, m.y));
-    const vel = 6 * at.velocidade * (ent.correndo() ? 1.1 : 1);
+    const vel = 6 * at.velocidade * (ent.correndo() ? 1.1 : 1) * (this.j.caido ? 0 : 1);
     this.recargaDash = Math.max(0, this.recargaDash - dt);
     this.invencivel = Math.max(0, this.invencivel - dt);
-    if ((ent.apertou('pular') || ent.apertou('esquivar')) && this.recargaDash <= 0) {
+    if (!parado && (ent.apertou('pular') || ent.apertou('esquivar')) && this.recargaDash <= 0) {
       const d = mag > 0.2 ? { x: m.x / mag, z: m.y / mag } : { x: this.dirX, z: this.dirZ };
       this.dash = 0.2;
       this.dashX = d.x;
@@ -798,54 +1188,79 @@ export class Partida {
       this.x *= RAIO_ARENA / dc;
       this.z *= RAIO_ARENA / dc;
     }
-    this.vida = Math.min(at.vidaMaxima, this.vida + at.regeneracao * dt);
+    this.cuidarVida(dt);
+  }
+
+  /** Jogador de outro aparelho: segue a última posição recebida, com suavização. */
+  private moverRemoto(dt: number): void {
+    const r = this.j.rede;
+    this.invencivel = Math.max(0, this.invencivel - dt);
+    // extrapola um pouco com a velocidade e aproxima suavemente
+    const idade = Math.min(0.25, r.t);
+    r.t += dt;
+    const ax = r.x + r.vx * idade;
+    const az = r.z + r.vz * idade;
+    const k = 1 - Math.exp(-14 * dt);
+    const dx = ax - this.x;
+    const dz = az - this.z;
+    if (dx * dx + dz * dz > 36) {
+      this.x = ax;
+      this.z = az;
+    } else {
+      this.x += dx * k;
+      this.z += dz * k;
+    }
+    this.vx = r.vx;
+    this.vz = r.vz;
+    this.angulo = r.angulo;
+    this.dirX = Math.sin(r.angulo);
+    this.dirZ = Math.cos(r.angulo);
+    this.dash = r.dash ? 0.1 : 0;
+    this.cuidarVida(dt);
+  }
+
+  private cuidarVida(dt: number): void {
+    const at = this.atributos;
+    if (this.autoridade && !this.j.caido)
+      this.vida = Math.min(at.vidaMaxima, this.vida + at.regeneracao * dt);
     this.humorT -= dt;
     if (this.humorT <= 0) this.humor = this.vida < at.vidaMaxima * 0.3 ? 'medo' : 'neutro';
+  }
 
-    // ------------------- tempo: hordas, chefes, noite
-    this.noite = Math.min(1, Math.max(0, (this.tempo - 200) / 360));
-    if (this.tempo >= this.proximaHorda) {
-      this.proximaHorda += INTERVALO_HORDA;
-      this.horda();
-    }
-    if (this.tempo >= this.proximoChefe) {
-      this.proximoChefe += INTERVALO_CHEFE;
-      this.surgirChefe();
-    }
-    this.acumulado += taxaSurgimento(this.tempo) * dt;
-    while (this.acumulado >= 1) {
-      this.acumulado -= 1;
-      this.surgirAleatorio();
-    }
+  /** Grupo: um jogador cai; os outros podem levantá-lo. Se todos caírem, acaba. */
+  private cair(jg: Jogador): void {
+    jg.caido = true;
+    jg.vida = 0;
+    jg.resgate = 0;
+    jg.dash = 0;
+    this.mostrarBanner(`${jg.def.nome} caiu!`, 'Fique perto para levantar', '#ff6b5a', 2.5);
+    this.audio.tocar('derrota');
+    if (this.jogadores.every((x) => x.caido)) this.morrer();
+  }
 
-    // ------------------- grade espacial
-    this.grade.clear();
-    for (const i of this.inimigos) {
-      const k = this.chave(i.x, i.z);
-      let l = this.grade.get(k);
-      if (!l) this.grade.set(k, (l = []));
-      l.push(i);
+  private atualizarResgates(dt: number): void {
+    for (const jg of this.jogadores) {
+      if (!jg.caido) continue;
+      const perto = this.jogadores.some(
+        (o) => o !== jg && !o.caido && (o.x - jg.x) ** 2 + (o.z - jg.z) ** 2 < 2.4 * 2.4
+      );
+      jg.resgate = perto ? jg.resgate + dt / 3 : Math.max(0, jg.resgate - dt * 0.5);
+      if (jg.resgate >= 1) {
+        jg.caido = false;
+        jg.resgate = 0;
+        jg.vida = jg.atributos.vidaMaxima * 0.4;
+        jg.invencivel = 2;
+        this.mostrarBanner(`${jg.def.nome} voltou!`, 'Trabalho em equipe', '#7affc1', 2);
+        this.audio.tocar('restauracao');
+        this.brilhos.explosao(jg.x, 1, jg.z, 50, {
+          cor: '#7affc1',
+          tamanho: 0.3,
+          vida: 1,
+          velocidade: 6,
+          gravidade: -2,
+        });
+      }
     }
-
-    // ------------------- habilidades
-    for (const h of this.habs) this.atualizarHabilidade(h, dt);
-
-    // ------------------- inimigos, projéteis, zonas, ondas, avisos
-    this.atualizarInimigos(dt);
-    this.atualizarProjeteis(dt);
-    this.atualizarZonas(dt);
-    this.atualizarOndas(dt);
-    this.atualizarAvisos(dt);
-    this.atualizarCristais(dt);
-    this.atualizarItens(dt);
-    for (const n of this.numeros) {
-      n.vida -= dt;
-      n.y += dt * 1.4;
-    }
-    this.numeros = this.numeros.filter((n) => n.vida > 0);
-    if (this.numeros.length > 70) this.numeros.splice(0, this.numeros.length - 70);
-
-    if (this.vida <= 0) this.morrer();
   }
 
   private chave(x: number, z: number): number {
@@ -906,10 +1321,12 @@ export class Partida {
   // ------------------------------------------------------------------ surgimento
 
   private criarInimigo(def: DefInimigo, x: number, z: number, elite = false): Inimigo | null {
+    if (!this.autoridade) return null;
     if (this.inimigos.length >= MAX_INIMIGOS && def.id !== 'chefe') return null;
     const mv = multVida(this.tempo) * (elite ? 6 : 1);
     const vida = def.vida * mv * (def.id === 'chefe' ? 1 + this.chefesDerrotados * 0.8 : 1);
     const i: Inimigo = {
+      id: this.proximoId++,
       def,
       x,
       z,
@@ -935,7 +1352,7 @@ export class Partida {
       vivo: true,
       elite,
       fase: this.rnd() * 10,
-      hits: new Float32Array(HABILIDADES.length),
+      hits: new Float32Array(HABILIDADES.length * MAX_JOGADORES),
     };
     this.inimigos.push(i);
     return i;
@@ -953,6 +1370,10 @@ export class Partida {
   }
 
   private surgirAleatorio(): void {
+    if (!this.autoridade) return;
+    // em grupo, os inimigos surgem em volta de um jogador sorteado
+    const vivos = this.ativos();
+    if (vivos.length) this.j = vivos[Math.floor(this.rnd() * vivos.length)];
     const t = this.tempo;
     const tipos = (Object.values(INIMIGOS) as DefInimigo[]).filter(
       (d) => d.peso > 0 && d.aparece <= t
@@ -974,17 +1395,23 @@ export class Partida {
         this.criarInimigo(def, p.x + (this.rnd() - 0.5) * 3, p.z + (this.rnd() - 0.5) * 3);
       if (this.rnd() < 0.2) this.vozes.resmungar(def.voz, p.x, p.z);
     } else this.criarInimigo(def, p.x, p.z, def.id !== 'trollBug' && t > 240 && this.rnd() < 0.015);
+    this.j = this.local;
   }
 
   private horda(): void {
-    const n = Math.min(70, 26 + Math.floor(this.tempo / 15));
+    const vivos = this.ativos();
     const def = this.tempo > 200 && this.rnd() < 0.5 ? INIMIGOS.zumbido : INIMIGOS.chiado;
-    for (let k = 0; k < n; k++) {
-      const a = (k / n) * Math.PI * 2;
-      const x = this.x + Math.cos(a) * 17;
-      const z = this.z + Math.sin(a) * 17;
-      if (Math.hypot(x, z) < RAIO_ARENA) this.criarInimigo(def, x, z);
-    }
+    // um anel em volta de cada jogador (um pouco menor por pessoa em grupo)
+    const n = Math.round(
+      Math.min(70, 26 + Math.floor(this.tempo / 15)) / Math.sqrt(Math.max(1, vivos.length))
+    );
+    for (const jg of vivos)
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2;
+        const x = jg.x + Math.cos(a) * 17;
+        const z = jg.z + Math.sin(a) * 17;
+        if (Math.hypot(x, z) < RAIO_ARENA) this.criarInimigo(def, x, z);
+      }
     this.mostrarBanner('HORDA!', 'O Ruído cercou você', '#ff6b5a', 2.5);
     this.som('inimigoAlerta', {}, 0);
     this.vozes.resmungar(def.voz, this.x, this.z);
@@ -992,10 +1419,12 @@ export class Partida {
   }
 
   private surgirChefe(): void {
-    const p = this.pontoBorda(18);
-    const c = this.criarInimigo(INIMIGOS.chefe, p.x, p.z);
-    if (!c) return;
-    this.chefeAtual = c;
+    if (this.autoridade) {
+      const p = this.pontoBorda(18);
+      const c = this.criarInimigo(INIMIGOS.chefe, p.x, p.z);
+      if (!c) return;
+      this.chefeAtual = c;
+    }
     this.mostrarBanner('O GRANDE RUÍDO CHEGOU', 'Derrote-o para um baú de ideias', '#c58bff', 4);
     this.audio.musica('chefe');
     this.audio.tocar('chefeRugido');
@@ -1021,7 +1450,8 @@ export class Partida {
     opcoes: { congela?: boolean; lento?: boolean } = {}
   ): void {
     if (!i.vivo) return;
-    let crit = this.rnd() < this.atributos.sorte + (elemento === 'luz' ? 0.1 : 0);
+    const dono = this.donoHab(hab) ?? this.j;
+    let crit = this.rnd() < dono.atributos.sorte + (elemento === 'luz' ? 0.1 : 0);
     let d = dano * (crit ? 2 : 1) * (0.92 + this.rnd() * 0.16);
     if (i.congelado > 0 && elemento !== 'gelo') {
       d *= 1.3;
@@ -1031,7 +1461,7 @@ export class Partida {
     i.flash = 0.1;
     this.danoCausado += d;
     if (hab >= 0) {
-      const h = this.habs.find((x) => x.idx === hab);
+      const h = this.habDe(hab);
       if (h) h.danoTotal += d;
     }
     // efeitos elementais
@@ -1085,6 +1515,17 @@ export class Partida {
 
   private matar(i: Inimigo): void {
     i.vivo = false;
+    if (!this.autoridade) {
+      // convidado: só o efeito; o anfitrião decide cristais, itens e contagem
+      this.brilhos.explosao(i.x, 0.6, i.z, i.def.id === 'chefe' ? 120 : 10, {
+        cor: i.def.cor,
+        tamanho: 0.28,
+        vida: 0.6,
+        velocidade: i.def.id === 'chefe' ? 12 : 5,
+      });
+      this.som('inimigoDerrotado', { x: i.x, y: i.z, volume: 0.5 }, 0.07);
+      return;
+    }
     this.abates++;
     const cor = i.def.cor;
     this.brilhos.explosao(i.x, 0.6, i.z, i.def.id === 'chefe' ? 120 : 10, {
@@ -1131,7 +1572,9 @@ export class Partida {
       else if (r < 0.0175) this.soltarItem('bomba', i.x, i.z);
     }
     // praga: veneno passa adiante
-    const praga = this.habs.find((h) => h.def.id === 'nuvemToxica' && h.nivel >= 10);
+    const praga = this.jogadores
+      .flatMap((jg) => jg.habs)
+      .find((h) => h.def.id === 'nuvemToxica' && h.nivel >= 10);
     if (praga && i.veneno > 0)
       for (const v of this.vizinhos(i.x, i.z, 2.5, this.tmpLista2))
         if (v !== i) this.causarDano(v, i.venenoDps, praga.idx, 'veneno');
@@ -1184,18 +1627,17 @@ export class Partida {
     }
     g.position.set(x, 0, z);
     this.cena.add(g);
-    this.itens.push({ tipo, x, z, malha: g });
+    this.itens.push({ id: this.proximoId++, tipo, x, z, malha: g });
   }
 
   private danoJogador(d: number, fonteX: number, fonteZ: number): void {
+    if (!this.autoridade || this.j.caido || this.j.ausente) return;
     if (this.invencivel > 0 || this.dash > 0) return;
     const real = Math.max(1, d - this.atributos.armadura);
     this.vida -= real;
     this.invencivel = 0.7;
-    this.modelo.piscarBranco();
-    this.modelo.impulso(-2);
-    this.tremer(0.25);
-    this.som('danoRecebido', {}, 0.1);
+    this.sentirDano(this.j);
+    if (!this.j.local) return;
     const dx = this.x - fonteX;
     const dz = this.z - fonteZ;
     const dd = Math.hypot(dx, dz) || 1;
@@ -1208,9 +1650,19 @@ export class Partida {
     }
   }
 
+  /** Efeito de levar dano (o convidado chama quando a vida dele cai na sincronização). */
+  sentirDano(jg: Jogador): void {
+    jg.modelo.piscarBranco();
+    jg.modelo.impulso(-2);
+    if (!jg.local) return;
+    this.tremer(0.25);
+    this.som('danoRecebido', {}, 0.1);
+  }
+
   private morrer(): void {
     this.estado = 'fim';
-    this.vida = 0;
+    if (this.papel === 'solo') this.vida = 0;
+    this.rede?.fim();
     this.audio.tocar('derrota');
     this.falar('morte', true);
     try {
@@ -1369,11 +1821,25 @@ export class Partida {
     }
   }
 
+  /** Anel da aura de cada jogador (cada um tem o seu). */
+  private auraDe(jg: Jogador): THREE.Mesh {
+    let m = this.aurasJogador.get(jg);
+    if (!m) {
+      m = new THREE.Mesh(this.aura.geometry, this.matAura.clone());
+      m.rotation.x = -Math.PI / 2;
+      this.cena.add(m);
+      this.aurasJogador.set(jg, m);
+    }
+    return m;
+  }
+
   private auraHab(h: HabAtiva, v: ReturnType<typeof valoresHabilidade>, dt: number): void {
-    this.aura.position.set(this.x, 0.06, this.z);
-    this.aura.scale.setScalar(v.area);
-    this.matAura.opacity = 0.35 + Math.sin(this.tempo * 4) * 0.12;
-    this.matAura.color.set(h.def.cor);
+    const aura = this.auraDe(this.j);
+    const mat = aura.material as THREE.MeshBasicMaterial;
+    aura.position.set(this.x, 0.06, this.z);
+    aura.scale.setScalar(v.area);
+    mat.opacity = 0.35 + Math.sin(this.tempo * 4) * 0.12;
+    mat.color.set(h.def.cor);
     if (this.rnd() < dt * 20) {
       const a = this.rnd() * Math.PI * 2;
       const r = this.rnd() * v.area;
@@ -2269,13 +2735,10 @@ export class Partida {
   // ------------------------------------------------------------------ atualizações
 
   private atualizarInimigos(dt: number): void {
-    const at = this.atributos;
-    void at;
-    let contato = 0;
-    let fonteX = 0;
-    let fonteZ = 0;
+    const contato = new Map<Jogador, { dano: number; x: number; z: number }>();
     for (const i of this.inimigos) {
       if (!i.vivo) continue;
+      this.j = this.maisProximoJogador(i.x, i.z) ?? this.local;
       i.fase += dt;
       i.flash = Math.max(0, i.flash - dt);
       i.lento = Math.max(0, i.lento - dt);
@@ -2421,20 +2884,21 @@ export class Partida {
       }
       // contato
       if (d < i.raio + 0.45 && i.y < 1 && !parado) {
-        if (i.dano > contato) {
-          contato = i.dano;
-          fonteX = i.x;
-          fonteZ = i.z;
-        }
+        const c = contato.get(this.j);
+        if (!c || i.dano > c.dano) contato.set(this.j, { dano: i.dano, x: i.x, z: i.z });
       }
       // longe demais: reaparece perto (mantém a pressão)
-      if (d > 45 && c !== 'chefe') {
+      if (d > 45 && c !== 'chefe' && this.autoridade) {
         const p = this.pontoBorda(22);
         i.x = p.x;
         i.z = p.z;
       }
     }
-    if (contato > 0) this.danoJogador(contato, fonteX, fonteZ);
+    for (const [jg, c] of contato) {
+      this.j = jg;
+      this.danoJogador(c.dano, c.x, c.z);
+    }
+    this.j = this.local;
     this.inimigos = this.inimigos.filter((i) => i.vivo);
   }
 
@@ -2529,6 +2993,7 @@ export class Partida {
       if (p.vida <= 0) continue;
       p.vida -= dt;
       p.giro += dt;
+      this.j = this.donoHab(p.hab) ?? this.local;
       if (p.inimigo) {
         p.x += p.vx * dt;
         p.z += p.vz * dt;
@@ -2536,9 +3001,12 @@ export class Partida {
           .get('orbe')!
           .por(p.x, p.y, p.z, p.escala, p.escala, p.escala, 0, 0, 0, p.cor);
         this.halos.por(p.x, p.y, p.z, 1.6, '#ff5cc8', 1.2);
-        if ((p.x - this.x) ** 2 + (p.z - this.z) ** 2 < (p.raio + 0.4) ** 2) {
+        for (const jg of this.jogadores) {
+          if (jg.caido || (p.x - jg.x) ** 2 + (p.z - jg.z) ** 2 >= (p.raio + 0.4) ** 2) continue;
+          this.j = jg;
           this.danoJogador(p.dano, p.x, p.z);
           p.vida = 0;
+          break;
         }
         continue;
       }
@@ -2551,7 +3019,7 @@ export class Partida {
         p.z = a.oz + (a.alvoZ - a.oz) * t;
         p.y = 1 + Math.sin(t * Math.PI) * 3;
         if (t >= 1) {
-          const h = this.habs.find((x) => x.idx === p.hab);
+          const h = this.habDe(p.hab);
           if (h) {
             const v = valoresHabilidade(h.def, h.nivel, this.atributos);
             this.criarZona(h, 'poca', p.x, p.z, v.area, 2.5, v.dano * (v.evo5 ? 0.5 : 0.25));
@@ -2619,7 +3087,7 @@ export class Partida {
       else if (p.forma === 'lamina' || p.forma === 'disco' || p.forma === 'serra')
         lote.por(p.x, p.y, p.z, s, s, s, 0, p.giro * 14, 0, p.cor);
       else lote.por(p.x, p.y, p.z, s, s, s, p.giro * 5, p.giro * 7, 0, p.cor);
-      const h = this.habs.find((x) => x.idx === p.hab);
+      const h = this.habDe(p.hab);
       this.halos.por(p.x, p.y, p.z, s * 2.6, h?.def.cor2 ?? '#ffffff', 1.2);
       if (this.rnd() < 0.5)
         this.brilhos.emitir({
@@ -2711,6 +3179,7 @@ export class Partida {
 
   private atualizarZonas(dt: number): void {
     for (const z of this.zonas) {
+      this.j = this.donoHab(z.hab) ?? this.local;
       z.vida -= dt;
       z.tick -= dt;
       const t = 1 - z.vida / z.total;
@@ -2823,9 +3292,13 @@ export class Partida {
       mat.opacity = 0.9 * (1 - o.raio / o.max);
       if (o.hab === -2) {
         // onda do chefe: atinge o jogador quando passa (esquive!)
-        const d = Math.hypot(this.x - o.x, this.z - o.z);
-        if (Math.abs(d - o.raio) < 0.5 && !o.atingidos.size) {
-          o.atingidos.add(o as unknown as Inimigo);
+        for (const jg of this.jogadores) {
+          o.jogadores ??= new Set();
+          if (o.jogadores.has(jg.indice)) continue;
+          const d = Math.hypot(jg.x - o.x, jg.z - o.z);
+          if (Math.abs(d - o.raio) >= 0.5) continue;
+          o.jogadores.add(jg.indice);
+          this.j = jg;
           this.danoJogador(o.dano, o.x, o.z);
         }
         continue;
@@ -2867,14 +3340,29 @@ export class Partida {
   }
 
   private atualizarCristais(dt: number): void {
-    const ima = this.atributos.ima;
     let coletou = 0;
+    const ativos = this.ativos();
     for (const c of this.cristais) {
-      const dx = this.x - c.x;
-      const dz = this.z - c.z;
+      if (!c.atraido) {
+        for (const jg of ativos) {
+          const r = jg.atributos.ima + c.t * 0.25;
+          if ((jg.x - c.x) ** 2 + (jg.z - c.z) ** 2 < r * r) {
+            c.atraido = true;
+            c.alvo = jg.indice;
+            break;
+          }
+        }
+        if (!c.atraido) continue;
+      }
+      const alvo =
+        this.jogadores.find((jg) => jg.indice === c.alvo && !jg.caido) ??
+        this.maisProximoJogador(c.x, c.z) ??
+        this.local;
+      c.alvo = alvo.indice;
+      const dx = alvo.x - c.x;
+      const dz = alvo.z - c.z;
       const d2 = dx * dx + dz * dz;
-      if (!c.atraido && d2 < (ima + c.t * 0.25) ** 2) c.atraido = true;
-      if (c.atraido) {
+      {
         const d = Math.sqrt(d2) || 1;
         const vel = 10 + Math.max(0, 14 - d) * 1.2;
         c.x += (dx / d) * vel * dt;
@@ -2918,10 +3406,13 @@ export class Partida {
         it.tipo === 'coracao' ? '#ff5f7e' : it.tipo === 'ima' ? '#9df0ff' : '#ffd27a',
         1
       );
-      if (Math.hypot(it.x - this.x, it.z - this.z) < 1.2) {
+      if (!this.autoridade) continue;
+      const quem = this.ativos().find((jg) => Math.hypot(it.x - jg.x, it.z - jg.z) < 1.2);
+      if (quem) {
         this.cena.remove(it.malha);
-        it.tipo = it.tipo === 'bau' ? 'bau' : it.tipo;
+        this.j = quem;
         this.pegarItem(it);
+        this.j = this.local;
         it.x = 1e9;
       }
     }
@@ -2936,7 +3427,10 @@ export class Partida {
     } else if (it.tipo === 'ima') {
       // puxa os cristais da região (não o mapa inteiro, senão a progressão explode)
       for (const c of this.cristais)
-        if (Math.abs(c.x - this.x) < 26 && Math.abs(c.z - this.z) < 26) c.atraido = true;
+        if (Math.abs(c.x - this.x) < 26 && Math.abs(c.z - this.z) < 26) {
+          c.atraido = true;
+          c.alvo = this.j.indice;
+        }
       this.audio.tocar('revelar');
       this.mostrarBanner('ÍMÃ DE IDEIAS!', 'Os cristais por perto vêm até você', '#9df0ff', 2);
     } else if (it.tipo === 'bomba') {
@@ -2964,33 +3458,47 @@ export class Partida {
 
   desenhar(dt: number): void {
     const menu = this.estado === 'menu';
-    // jogador
-    this.modelo.raiz.position.set(this.x, 0, this.z);
-    const piscar =
-      this.invencivel > 0 && this.invencivel < 0.7 && Math.floor(this.invencivel * 16) % 2 === 0;
-    this.modelo.raiz.visible = !piscar;
-    this.modelo.atualizar(dt, {
-      velocidade: menu ? 0 : Math.hypot(this.vx, this.vz),
-      noChao: true,
-      vy: 0,
-      angulo: menu ? Math.sin(this.menuGiro) * 0.55 : this.angulo,
-      golpe: -1,
-      anguloGolpe: 0,
-      esquiva: this.dash > 0 ? 1 - this.dash / 0.2 : -1,
-      ferido: this.invencivel > 0.3 && this.estado === 'jogando' ? 0.6 : 0,
-      humor: menu ? 'feliz' : this.humor,
-      escondido: false,
-      defendendo: false,
-      falando: false,
-      conjurando: 0,
-    });
-    this.modelo.posicionarSombra(this.x, 0, this.z, 0);
-    const anel = this.modelo.raiz.getObjectByName('anelGiro');
-    if (anel) anel.rotation.z += dt * 2;
+    this.j = this.local;
+    // jogadores
+    for (const jg of this.jogadores) {
+      const visivelMenu = !menu || jg === this.local;
+      jg.modelo.raiz.position.set(jg.x, 0, jg.z);
+      const piscar =
+        jg.invencivel > 0 && jg.invencivel < 0.7 && Math.floor(jg.invencivel * 16) % 2 === 0;
+      jg.modelo.raiz.visible = visivelMenu && !piscar;
+      jg.modelo.sombraContato.visible = visivelMenu;
+      jg.modelo.atualizar(dt, {
+        velocidade: menu || jg.caido ? 0 : Math.hypot(jg.vx, jg.vz),
+        noChao: true,
+        vy: 0,
+        angulo: menu ? Math.sin(this.menuGiro) * 0.55 : jg.angulo,
+        golpe: -1,
+        anguloGolpe: 0,
+        esquiva: jg.dash > 0 ? 1 - jg.dash / 0.2 : -1,
+        ferido: jg.caido ? 1 : jg.invencivel > 0.3 && this.estado === 'jogando' ? 0.6 : 0,
+        humor: menu ? 'feliz' : jg.caido ? 'medo' : jg.humor,
+        escondido: false,
+        defendendo: false,
+        falando: false,
+        conjurando: 0,
+      });
+      // caído: deitado e transparente até alguém levantar
+      jg.modelo.raiz.rotation.z = jg.caido ? Math.PI / 2.2 : 0;
+      jg.modelo.posicionarSombra(jg.x, 0, jg.z, 0);
+      const anel = jg.modelo.raiz.getObjectByName('anelGiro');
+      if (anel) anel.rotation.z += dt * 2;
+      const aura = this.aurasJogador.get(jg);
+      if (aura && (menu || jg.caido || !jg.habs.some((h) => h.def.comportamento === 'aura')))
+        (aura.material as THREE.MeshBasicMaterial).opacity = 0;
+    }
     VENTO.jogador.value.set(this.x, 0, this.z);
 
     // lotes por quadro (órbitas, projéteis e brilhos da simulação já foram postos no passo)
     this.halos.voltarMarca();
+    if (!menu)
+      for (const jg of this.jogadores)
+        if (jg.caido)
+          this.halos.por(jg.x, 0.6, jg.z, 2.4 + jg.resgate * 3, '#7affc1', 0.4 + jg.resgate);
     for (const l of this.lotesInimigos.values()) l.iniciar();
     this.loteOlhos.iniciar();
     for (const l of this.lotesCristal) l.iniciar();
@@ -3084,10 +3592,10 @@ export class Partida {
       if (e.vida <= 0) this.cena.remove(e.malha);
     }
     this.efeitos = this.efeitos.filter((e) => e.vida > 0);
-    if (!this.habs.some((h) => h.def.comportamento === 'aura')) this.matAura.opacity = 0;
+    this.matAura.opacity = 0;
     this.anelMagnetico.position.set(this.x, 0.05, this.z);
     this.anelMagnetico.scale.setScalar(this.atributos.ima);
-    this.anelMagnetico.visible = !menu;
+    this.anelMagnetico.visible = !menu && !this.local.caido;
 
     // céu: o dia vira noite com o tempo
     const n = this.noite;
@@ -3131,6 +3639,329 @@ export class Partida {
     this.brilhos.atualizar(dt, this.tempo);
     this.halos.concluir();
     this.renderizador.render(this.cena, this.camera);
+  }
+
+  // ------------------------------------------------------------------ rede (multijogador)
+
+  /** Anfitrião → convidados: estado da partida (≈5 vezes por segundo). */
+  exportarEstado(): Mensagem {
+    const tipos = Object.keys(INIMIGOS) as IdInimigo[];
+    const ini: number[] = [];
+    for (const i of this.inimigos) {
+      if (!i.vivo) continue;
+      const f =
+        (i.elite ? 1 : 0) |
+        (i.congelado > 0 ? 2 : 0) |
+        (i.lento > 0 ? 4 : 0) |
+        (i.queimar > 0 ? 8 : 0) |
+        (i.veneno > 0 ? 16 : 0) |
+        (i.atordoado > 0 ? 32 : 0);
+      const at = i.ataque ? ['onda', 'investida', 'invocar'].indexOf(i.ataque.tipo) + 1 : 0;
+      ini.push(
+        i.id,
+        tipos.indexOf(i.def.id),
+        Math.round(i.x * 100),
+        Math.round(i.z * 100),
+        Math.round(i.y * 100),
+        Math.round(i.vida * 10),
+        Math.round(i.vidaMax * 10),
+        f,
+        Math.round(i.ang * 100),
+        Math.round(i.raio * 100),
+        at,
+        i.ataque ? Math.round(i.ataque.t * 100) : 0,
+        Math.round(i.vel * 100),
+        Math.round(i.dano * 10)
+      );
+    }
+    const itTipos: Item['tipo'][] = ['coracao', 'ima', 'bomba', 'bau'];
+    return {
+      t: 'estado',
+      tp: Math.round(this.tempo * 100) / 100,
+      ph: this.proximaHorda,
+      pc: this.proximoChefe,
+      xp: Math.round(this.xp * 10) / 10,
+      nv: this.nivel,
+      xpp: this.xpProximo,
+      ab: this.abates,
+      cd: this.chefesDerrotados,
+      ch: this.chefeAtual?.id ?? 0,
+      est: this.estado,
+      jg: this.jogadores.map((jg) => [
+        jg.indice,
+        Math.round(jg.vida * 10) / 10,
+        jg.caido ? 1 : 0,
+        Math.round(jg.resgate * 100),
+        jg.ausente ? 1 : 0,
+        Math.round(jg.invencivel * 100),
+      ]),
+      ini,
+      it: this.itens.map((it) => [
+        it.id,
+        itTipos.indexOf(it.tipo),
+        Math.round(it.x * 100),
+        Math.round(it.z * 100),
+      ]),
+      bn: this.banner
+        ? [this.banner.texto, this.banner.sub, this.banner.cor, this.banner.vida]
+        : null,
+    };
+  }
+
+  /** Convidado: aplica o estado recebido do anfitrião. */
+  importarEstado(m: Record<string, unknown>): void {
+    this.tempo = Number(m.tp);
+    this.proximaHorda = Number(m.ph);
+    this.proximoChefe = Number(m.pc);
+    this.xp = Number(m.xp);
+    this.nivel = Number(m.nv);
+    this.xpProximo = Number(m.xpp);
+    this.abates = Number(m.ab);
+    this.chefesDerrotados = Number(m.cd);
+    for (const [indice, vida, caido, resgate, ausente, inv] of m.jg as number[][]) {
+      const jg = this.jogadores.find((x) => x.indice === indice);
+      if (!jg) continue;
+      if (vida < jg.vida - 0.5 && !caido) this.sentirDano(jg);
+      jg.vida = vida;
+      if (caido && !jg.caido && jg.local) this.audio.tocar('derrota');
+      jg.caido = !!caido;
+      jg.resgate = resgate / 100;
+      if (!jg.local) {
+        jg.ausente = !!ausente;
+        jg.invencivel = inv / 100;
+      } else if (inv / 100 > jg.invencivel + 0.3) jg.invencivel = inv / 100;
+    }
+    // inimigos: atualiza os que já existem, cria os novos e tira os que sumiram
+    const tipos = Object.keys(INIMIGOS) as IdInimigo[];
+    const ini = m.ini as number[];
+    const porId = new Map(this.inimigos.map((i) => [i.id, i]));
+    const vistos = new Set<number>();
+    const N = 14;
+    for (let k = 0; k + N <= ini.length; k += N) {
+      const id = ini[k];
+      vistos.add(id);
+      let i = porId.get(id);
+      const def = INIMIGOS[tipos[ini[k + 1]]];
+      if (!def) continue;
+      if (!i) {
+        i = {
+          id,
+          def,
+          x: 0,
+          z: 0,
+          y: 0,
+          vy: 0,
+          vx: 0,
+          vz: 0,
+          vida: 1,
+          vidaMax: 1,
+          dano: 1,
+          vel: 1,
+          raio: def.raio,
+          ang: 0,
+          lento: 0,
+          congelado: 0,
+          atordoado: 0,
+          queimar: 0,
+          queimarDps: 0,
+          veneno: 0,
+          venenoDps: 0,
+          flash: 0,
+          recarga: 3,
+          vivo: true,
+          elite: false,
+          fase: this.rnd() * 10,
+          hits: new Float32Array(HABILIDADES.length * MAX_JOGADORES),
+        };
+        this.inimigos.push(i);
+      }
+      i.vivo = true;
+      i.x = ini[k + 2] / 100;
+      i.z = ini[k + 3] / 100;
+      i.y = ini[k + 4] / 100;
+      i.vida = ini[k + 5] / 10;
+      i.vidaMax = ini[k + 6] / 10;
+      const f = ini[k + 7];
+      i.elite = !!(f & 1);
+      i.congelado = f & 2 ? Math.max(i.congelado, 0.3) : 0;
+      i.lento = f & 4 ? Math.max(i.lento, 0.3) : 0;
+      i.queimar = f & 8 ? Math.max(i.queimar, 0.3) : 0;
+      i.veneno = f & 16 ? Math.max(i.veneno, 0.3) : 0;
+      i.atordoado = f & 32 ? Math.max(i.atordoado, 0.3) : 0;
+      i.ang = ini[k + 8] / 100;
+      i.raio = ini[k + 9] / 100;
+      const at = ini[k + 10];
+      if (at > 0) {
+        const tipo = (['onda', 'investida', 'invocar'] as const)[at - 1];
+        if (!i.ataque || i.ataque.tipo !== tipo)
+          i.ataque = { tipo, t: ini[k + 11] / 100, ax: 0, az: 0 };
+      } else i.ataque = undefined;
+      i.vel = ini[k + 12] / 100;
+      i.dano = ini[k + 13] / 10;
+    }
+    for (const i of this.inimigos)
+      if (!vistos.has(i.id) && i.vivo) {
+        i.vivo = false;
+        this.brilhos.explosao(i.x, 0.6, i.z, 8, {
+          cor: i.def.cor,
+          tamanho: 0.26,
+          vida: 0.5,
+          velocidade: 4,
+        });
+      }
+    this.inimigos = this.inimigos.filter((i) => i.vivo);
+    const ch = Number(m.ch);
+    this.chefeAtual = ch ? (this.inimigos.find((i) => i.id === ch) ?? null) : null;
+    // itens
+    const itTipos: Item['tipo'][] = ['coracao', 'ima', 'bomba', 'bau'];
+    const itens = m.it as number[][];
+    const ids = new Set(itens.map((d) => d[0]));
+    for (const it of this.itens)
+      if (!ids.has(it.id)) {
+        this.cena.remove(it.malha);
+        it.x = 1e9;
+      }
+    this.itens = this.itens.filter((it) => it.x < 1e8);
+    for (const [id, tipo, x, z] of itens)
+      if (!this.itens.some((it) => it.id === id)) {
+        this.soltarItem(itTipos[tipo], x / 100, z / 100);
+        this.itens[this.itens.length - 1].id = id;
+      }
+    // aviso na tela
+    const bn = m.bn as [string, string, string, number] | null;
+    if (bn && (!this.banner || this.banner.texto !== bn[0] || this.banner.sub !== bn[1]))
+      this.mostrarBanner(bn[0], bn[1], bn[2], bn[3]);
+    if (m.est === 'fim' && this.estado !== 'fim') {
+      this.estado = 'fim';
+      this.audio.tocar('derrota');
+      this.aoMudar();
+    } else if (m.est === 'jogando' && this.estado === 'nivel') {
+      this.estado = 'jogando';
+      this.aoMudar();
+    }
+  }
+
+  /** Cristais no chão (anfitrião → convidados, ≈1 vez por segundo). */
+  exportarCristais(): Mensagem {
+    const c: number[] = [];
+    for (const k of this.cristais)
+      if (k.t >= 0) c.push(Math.round(k.x * 10), Math.round(k.z * 10), k.t);
+    return { t: 'cristais', c };
+  }
+
+  importarCristais(m: Record<string, unknown>): void {
+    const c = m.c as number[];
+    const novos: Cristal[] = [];
+    for (let k = 0; k + 3 <= c.length; k += 3) {
+      const x = c[k] / 10;
+      const z = c[k + 1] / 10;
+      novos.push({ x, z, t: c[k + 2], atraido: false, fase: Math.abs(x * 13.7 + z * 7.3) % 6 });
+    }
+    this.cristais = novos;
+  }
+
+  /** Posições de todos (anfitrião) ou só a minha (convidado). */
+  exportarPosicoes(soLocal: boolean): number[][] {
+    return this.jogadores
+      .filter((jg) => !soLocal || jg.local)
+      .map((jg) => [
+        jg.indice,
+        Math.round(jg.x * 100) / 100,
+        Math.round(jg.z * 100) / 100,
+        Math.round(jg.vx * 100) / 100,
+        Math.round(jg.vz * 100) / 100,
+        Math.round(jg.angulo * 100) / 100,
+        jg.dash > 0 ? 1 : 0,
+        jg.ausente ? 1 : 0,
+      ]);
+  }
+
+  importarPosicoes(lista: number[][]): void {
+    for (const [indice, x, z, vx, vz, a, d, aus] of lista) {
+      const jg = this.jogadores.find((o) => o.indice === indice);
+      if (!jg || jg.local) continue;
+      jg.rede = { x, z, vx, vz, angulo: a, dash: !!d, t: 0 };
+      if (this.autoridade) jg.ausente = !!aus;
+    }
+  }
+
+  /** Builds e escolhas de nível (anfitrião → convidados). */
+  exportarNivel(): Mensagem {
+    const of: Record<number, Oferta[]> = {};
+    const b: Record<number, EstadoBuild> = {};
+    const rr: Record<number, number> = {};
+    const esc: number[] = [];
+    for (const jg of this.jogadores) {
+      of[jg.indice] = jg.ofertas;
+      b[jg.indice] = jg.build;
+      rr[jg.indice] = jg.rerrolagens;
+      if (jg.escolheu) esc.push(jg.indice);
+    }
+    return {
+      t: 'nivel',
+      est: this.estado,
+      pend: this.niveisPendentes,
+      nv: this.nivel,
+      of,
+      b,
+      rr,
+      esc,
+    };
+  }
+
+  importarNivel(m: Record<string, unknown>): void {
+    const of = m.of as Record<number, Oferta[]>;
+    const b = m.b as Record<number, EstadoBuild>;
+    const rr = m.rr as Record<number, number>;
+    const esc = m.esc as number[];
+    const antes = this.estado;
+    for (const jg of this.jogadores) {
+      if (b[jg.indice]) {
+        this.j = jg;
+        this.build = b[jg.indice];
+        this.atualizarBuild();
+      }
+      jg.ofertas = of[jg.indice] ?? [];
+      jg.rerrolagens = rr[jg.indice] ?? jg.rerrolagens;
+      jg.escolheu = esc.includes(jg.indice);
+    }
+    this.j = this.local;
+    this.niveisPendentes = Number(m.pend);
+    this.nivel = Number(m.nv);
+    if (m.est === 'nivel' || m.est === 'jogando') this.estado = m.est;
+    if (this.estado === 'nivel' && antes !== 'nivel') {
+      this.audio.tocar('comemoracao');
+      this.falar('nivel');
+    }
+    this.aoMudar();
+  }
+
+  /** Remove quem saiu da sala no meio da partida. */
+  removerJogador(indice: number): void {
+    const jg = this.jogadores.find((x) => x.indice === indice);
+    if (!jg || jg.local) return;
+    this.cena.remove(jg.modelo.raiz, jg.modelo.sombraContato);
+    const aura = this.aurasJogador.get(jg);
+    if (aura) this.cena.remove(aura);
+    this.aurasJogador.delete(jg);
+    this.jogadores = this.jogadores.filter((x) => x !== jg);
+    this.mostrarBanner(`${jg.def.nome} saiu da sala`, '', '#ffb0a0', 2.5);
+    if (this.estado === 'nivel' && this.autoridade && this.jogadores.every((x) => x.escolheu)) {
+      this.estado = 'jogando';
+      this.rede?.nivelAberto();
+    }
+    this.aoMudar();
+  }
+
+  /** Convidado aplica a escolha de cartas de um jogador remoto (só no anfitrião). */
+  escolhaRemota(indice: number, i: number): void {
+    const jg = this.jogadores.find((x) => x.indice === indice);
+    if (jg) this.aplicarEscolha(jg, i);
+  }
+
+  rerrolarRemoto(indice: number): void {
+    const jg = this.jogadores.find((x) => x.indice === indice);
+    if (jg) this.rerrolarJogador(jg);
   }
 
   // ------------------------------------------------------------------ depuração (testes automatizados)

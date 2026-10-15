@@ -11,16 +11,19 @@
     "tipos": "tsc --noEmit",
     "testar": "vitest run",
     "e2e": "node testes/e2e/rodar.mjs",
-    "formatar": "prettier --write \"src/**/*.ts\" \"testes/**/*.{ts,mjs}\" \"ferramentas/**/*.{ts,mjs}\""
+    "formatar": "prettier --write \"src/**/*.ts\" \"testes/**/*.{ts,mjs}\" \"ferramentas/**/*.{ts,mjs}\"",
+    "lan": "node ferramentas/servidor-lan.mjs"
   },
   "devDependencies": {
     "@types/three": "0.170.0",
+    "@types/ws": "8.5.12",
     "playwright": "1.56.1",
     "prettier": "^3.8.1",
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vite-plugin-singlefile": "2.3.3",
-    "vitest": "3.2.7"
+    "vitest": "3.2.7",
+    "ws": "8.18.0"
   },
   "packageManager": "pnpm@10.17.1",
   "pnpm": {
@@ -29,6 +32,7 @@
     ]
   },
   "dependencies": {
-    "three": "0.170.0"
+    "three": "0.170.0",
+    "uqr": "0.1.2"
   }
 }

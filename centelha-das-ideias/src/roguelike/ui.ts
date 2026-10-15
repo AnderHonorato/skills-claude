@@ -5,7 +5,9 @@
  */
 import { ELEMENTOS, HABILIDADES, PASSIVAS, habilidade, passiva } from './dados/habilidades';
 import { PERSONAGENS, type DefPersonagem, type IdPersonagem } from './dados/personagens';
+import { CORES_JOGADOR } from './jogo/jogador';
 import type { Partida } from './jogo/partida';
+import { PainelSala } from './ui-sala';
 import {
   ATRIBUTOS_BASE,
   MAX_ATIVAS,
@@ -121,6 +123,11 @@ export class InterfaceSobrevivencia {
   private vinheta = el('div', 'rg-vinheta');
   private dashBotao = el('button', 'rg-dash');
   private cache = new Map<string, string>();
+  /** Multijogador local: painel da sala, etiquetas sobre os colegas e mini barras de vida. */
+  readonly sala: PainelSala;
+  private etiquetas: HTMLElement[] = [];
+  private equipe = el('div', 'rg-equipe');
+  private linhasEquipe: { raiz: HTMLElement; nome: HTMLElement; barra: HTMLElement }[] = [];
 
   constructor(
     private partida: Partida,
@@ -128,7 +135,12 @@ export class InterfaceSobrevivencia {
   ) {
     this.raiz = raiz;
     raiz.classList.add('rg');
-    raiz.append(this.vinheta, this.hud, this.camadaMenu, this.modal, this.toque);
+    this.sala = new PainelSala(partida);
+    this.sala.aoMudar = () => {
+      this.estadoDesenhado = '';
+      this.renderizarEstado();
+    };
+    raiz.append(this.vinheta, this.hud, this.camadaMenu, this.modal, this.toque, this.sala.raiz);
     this.montarHud();
     this.montarToque();
     partida.aoMudar = () => this.renderizarEstado();
@@ -140,6 +152,7 @@ export class InterfaceSobrevivencia {
 
   private tecla(e: KeyboardEvent): void {
     const p = this.partida;
+    if (this.sala.aberto) return;
     if (p.estado === 'menu') {
       const i = PERSONAGENS.findIndex((d) => d.id === this.selecao);
       const colunas = window.innerWidth < 720 ? 2 : 3;
@@ -160,32 +173,59 @@ export class InterfaceSobrevivencia {
       if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();
         this.comecar();
-      } else if (e.code === 'Escape') p.voltarMenu();
+      } else if (e.code === 'Escape') this.voltarAoMenu();
     }
   }
 
   // ------------------------------------------------------------------ estados
 
+  /** Estado que a tela mostra (em grupo, a pausa é só deste aparelho). */
+  private get estadoTela(): string {
+    const p = this.partida;
+    if (p.pausaLocal && (p.estado === 'jogando' || p.estado === 'nivel')) return 'pausa';
+    return p.estado;
+  }
+
   private renderizarEstado(): void {
     const p = this.partida;
-    const chave = `${p.estado}|${p.estado === 'nivel' ? p.ofertas.map((o) => o.id + o.nivelAtual).join(',') + p.rerrolagens : ''}|${this.selecao}`;
+    const est = this.estadoTela;
+    const s = this.sala.sessao;
+    const chave = [
+      est,
+      est === 'nivel'
+        ? p.ofertas.map((o) => o.id + o.nivelAtual).join(',') +
+          p.rerrolagens +
+          (p.local.escolheu ? p.jogadores.map((jg) => (jg.escolheu ? 1 : 0)).join('') : '')
+        : '',
+      this.selecao,
+      s ? `${s.papel}:${s.membros.map((m) => m.indice + m.personagem).join(',')}` : 'solo',
+    ].join('|');
     if (chave === this.estadoDesenhado) return;
     this.estadoDesenhado = chave;
-    this.raiz.dataset.estado = p.estado;
-    this.camadaMenu.hidden = p.estado !== 'menu';
-    this.hud.hidden = p.estado === 'menu';
-    this.toque.hidden = p.estado !== 'jogando';
+    this.raiz.dataset.estado = est;
+    if (est !== 'menu') this.sala.raiz.hidden = true;
+    this.camadaMenu.hidden = est !== 'menu';
+    this.hud.hidden = est === 'menu';
+    this.toque.hidden = est !== 'jogando';
     this.modal.replaceChildren();
     this.modal.hidden = true;
-    if (p.estado === 'menu') this.desenharMenu();
-    else if (p.estado === 'nivel') this.desenharNivel();
-    else if (p.estado === 'pausa') this.desenharPausa();
-    else if (p.estado === 'fim') this.desenharFim();
+    if (est === 'menu') this.desenharMenu();
+    else if (est === 'nivel') this.desenharNivel();
+    else if (est === 'pausa') this.desenharPausa();
+    else if (est === 'fim') this.desenharFim();
+  }
+
+  private voltarAoMenu(): void {
+    const s = this.sala.sessao;
+    if (s?.papel === 'anfitriao') s.voltarParaSala();
+    else if (s) s.sair();
+    else this.partida.voltarMenu();
   }
 
   private selecionar(id: IdPersonagem, falar = true): void {
     if (this.selecao === id && !falar) return;
     this.partida.escolherPersonagem(id);
+    this.sala.sessao?.trocarPersonagem(id);
     this.partida.audio.tocar('uiNavegar');
     if (falar) {
       const def = this.partida.def;
@@ -197,6 +237,14 @@ export class InterfaceSobrevivencia {
 
   private comecar(): void {
     this.partida.audio.desbloquear();
+    const s = this.sala.sessao;
+    if (s) {
+      if (s.papel === 'anfitriao') {
+        this.partida.audio.tocar('uiConfirmar');
+        s.iniciarPartida();
+      }
+      return;
+    }
     this.partida.audio.tocar('uiConfirmar');
     this.partida.iniciar();
   }
@@ -272,10 +320,31 @@ export class InterfaceSobrevivencia {
     painel.append(det);
 
     const acoes = el('div', 'rg-menu-acoes');
-    const jogar = el('button', 'rg-botao principal', `Jogar com ${def.nome}`);
+    const s = this.sala.sessao;
+    const jogar = el(
+      'button',
+      'rg-botao principal',
+      !s
+        ? `Jogar com ${def.nome}`
+        : s.papel === 'anfitriao'
+          ? `Começar com ${s.membros.length} jogador${s.membros.length > 1 ? 'es' : ''}`
+          : 'Esperando o anfitrião começar…'
+    );
     jogar.type = 'button';
+    jogar.disabled = s?.papel === 'convidado';
     jogar.addEventListener('click', () => this.comecar());
     acoes.append(jogar);
+    const junto = el(
+      'button',
+      'rg-botao rg-botao-junto',
+      s ? `Sala: ${s.membros.length}/4 jogadores` : 'Jogar junto (mesmo Wi-Fi)'
+    );
+    junto.type = 'button';
+    junto.addEventListener('click', () => {
+      this.partida.audio.desbloquear();
+      this.sala.abrir();
+    });
+    acoes.append(junto);
     painel.append(acoes);
 
     const rod = el('div', 'rg-menu-rodape');
@@ -300,6 +369,17 @@ export class InterfaceSobrevivencia {
   private desenharNivel(): void {
     const p = this.partida;
     this.modal.hidden = false;
+    if (p.local.escolheu || p.local.caido) {
+      const caixa = el('div', 'rg-caixa rg-caixa-espera');
+      const faltam = p.jogadores.filter((jg) => !jg.escolheu).map((jg) => jg.def.nome);
+      caixa.append(
+        el('div', 'rg-nivel-sobre', 'Subiu de nível!'),
+        el('h2', undefined, 'Esperando os outros escolherem…'),
+        el('p', 'rg-nivel-dica', faltam.length ? `Falta: ${faltam.join(', ')}` : 'Quase…')
+      );
+      this.modal.append(caixa);
+      return;
+    }
     const caixa = el('div', 'rg-caixa rg-caixa-nivel');
     caixa.append(
       el('div', 'rg-nivel-sobre', 'Subiu de nível!'),
@@ -411,6 +491,14 @@ export class InterfaceSobrevivencia {
     this.modal.hidden = false;
     const caixa = el('div', 'rg-caixa rg-caixa-pausa');
     caixa.append(el('h2', undefined, 'Pausa'));
+    if (p.papel !== 'solo')
+      caixa.append(
+        el(
+          'p',
+          'rg-nivel-dica',
+          'Em grupo o jogo continua para os outros. Você fica protegido até voltar.'
+        )
+      );
     const cont = el('button', 'rg-botao principal', 'Continuar');
     cont.type = 'button';
     cont.addEventListener('click', () => p.pausar(false));
@@ -442,9 +530,21 @@ export class InterfaceSobrevivencia {
     vozes.append(el('span', undefined, 'Vozes dos personagens'), cb);
     caixa.append(vozes);
     caixa.append(this.listaBuild());
-    const menu = el('button', 'rg-botao', 'Desistir e voltar ao menu');
+    const s = this.sala.sessao;
+    const menu = el(
+      'button',
+      'rg-botao',
+      !s
+        ? 'Desistir e voltar ao menu'
+        : s.papel === 'anfitriao'
+          ? 'Encerrar a partida (todos voltam à sala)'
+          : 'Sair da sala'
+    );
     menu.type = 'button';
-    menu.addEventListener('click', () => p.voltarMenu());
+    menu.addEventListener('click', () => {
+      p.pausar(false);
+      this.voltarAoMenu();
+    });
     caixa.append(menu);
     this.modal.append(caixa);
   }
@@ -518,12 +618,22 @@ export class InterfaceSobrevivencia {
     }
     caixa.append(tab);
     const acoes = el('div', 'rg-menu-acoes');
-    const nov = el('button', 'rg-botao principal', 'Jogar de novo');
+    const s = this.sala.sessao;
+    const nov = el(
+      'button',
+      'rg-botao principal',
+      s?.papel === 'convidado' ? 'Esperando o anfitrião…' : 'Jogar de novo'
+    );
     nov.type = 'button';
+    nov.disabled = s?.papel === 'convidado';
     nov.addEventListener('click', () => this.comecar());
-    const trocar = el('button', 'rg-botao', 'Trocar personagem');
+    const trocar = el(
+      'button',
+      'rg-botao',
+      !s ? 'Trocar personagem' : s.papel === 'anfitriao' ? 'Voltar à sala' : 'Sair da sala'
+    );
     trocar.type = 'button';
-    trocar.addEventListener('click', () => p.voltarMenu());
+    trocar.addEventListener('click', () => this.voltarAoMenu());
     acoes.append(nov, trocar);
     caixa.append(acoes);
     this.modal.append(caixa);
@@ -577,7 +687,33 @@ export class InterfaceSobrevivencia {
       numeros.append(n);
       this.numeros.push(n);
     }
-    this.hud.append(numeros, xp, topo, this.chefe, this.avisoChefe, this.banner, slots);
+    const etiquetas = el('div', 'rg-etiquetas');
+    for (let i = 0; i < 4; i++) {
+      const e = el('div', 'rg-etiqueta');
+      e.hidden = true;
+      etiquetas.append(e);
+      this.etiquetas.push(e);
+      const raiz = el('div', 'rg-equipe-linha');
+      raiz.hidden = true;
+      const nome = el('span', 'rg-equipe-nome');
+      const fundo = el('div', 'rg-equipe-vida');
+      const barra = el('div', 'rg-equipe-preench');
+      fundo.append(barra);
+      raiz.append(nome, fundo);
+      this.equipe.append(raiz);
+      this.linhasEquipe.push({ raiz, nome, barra });
+    }
+    this.hud.append(
+      numeros,
+      etiquetas,
+      xp,
+      topo,
+      this.equipe,
+      this.chefe,
+      this.avisoChefe,
+      this.banner,
+      slots
+    );
   }
 
   private montarToque(): void {
@@ -805,6 +941,41 @@ export class InterfaceSobrevivencia {
       div.classList.toggle('critico', n.critico);
     }
     for (; k < this.numeros.length; k++) if (!this.numeros[k].hidden) this.numeros[k].hidden = true;
+
+    // multijogador: etiquetas sobre cada um e mini barras dos colegas
+    const grupo = p.jogadores.length > 1;
+    for (let i = 0; i < 4; i++) {
+      const jg = p.jogadores[i];
+      const e = this.etiquetas[i];
+      const linha = this.linhasEquipe[i];
+      if (!grupo || !jg) {
+        e.hidden = true;
+        linha.raiz.hidden = true;
+        continue;
+      }
+      const cor = CORES_JOGADOR[jg.indice] ?? '#fff';
+      const t = p.paraTela(jg.x, 2.1, jg.z);
+      e.hidden = !t.visivel;
+      if (t.visivel) {
+        const txt = jg.caido
+          ? `${jg.def.nome} caiu · ${Math.round(jg.resgate * 100)}%`
+          : jg.ausente
+            ? `${jg.def.nome} · pausado`
+            : `J${jg.indice + 1} ${jg.def.nome}${jg.local ? ' (você)' : ''}`;
+        if (e.textContent !== txt) e.textContent = txt;
+        e.style.transform = `translate(${t.x.toFixed(0)}px, ${t.y.toFixed(0)}px) translate(-50%, -100%)`;
+        e.style.setProperty('--cor', cor);
+        e.classList.toggle('caido', jg.caido);
+      }
+      linha.raiz.hidden = jg.local;
+      if (!jg.local) {
+        linha.raiz.style.setProperty('--cor', cor);
+        const nome = `J${jg.indice + 1} ${jg.def.nome}`;
+        if (linha.nome.textContent !== nome) linha.nome.textContent = nome;
+        linha.barra.style.width = `${Math.max(0, (jg.vida / jg.atributos.vidaMaxima) * 100).toFixed(0)}%`;
+        linha.raiz.classList.toggle('caido', jg.caido);
+      }
+    }
 
     // botão de esquiva: mostra a recarga
     this.dashBotao.style.setProperty('--recarga', String(Math.max(0, p.recargaDash / 1.4)));

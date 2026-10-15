@@ -100,7 +100,7 @@ function semWebgl(): boolean {
 function iniciarSobrevivencia(canvas: HTMLCanvasElement, raizUi: HTMLElement): void {
   const partida = new Partida(canvas);
   const ui = new InterfaceSobrevivencia(partida, raizUi);
-  instalarApiSobrevivencia(partida);
+  instalarApiSobrevivencia(partida, ui);
   partida.audio.musica('titulo');
   const desbloquear = () => partida.audio.desbloquear();
   window.addEventListener('pointerdown', desbloquear);

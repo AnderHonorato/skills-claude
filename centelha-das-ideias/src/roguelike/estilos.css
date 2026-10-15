@@ -1181,3 +1181,236 @@
     font-size: 42px;
   }
 }
+
+/* ------------------------------------------------------------------ multijogador local */
+
+.rg-botao-junto {
+  flex-basis: 100%;
+  border-color: color-mix(in srgb, var(--luz) 55%, transparent);
+  color: var(--luz);
+}
+
+.rg-sala {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: auto;
+}
+
+.rg-sala-fundo {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--seguro-c) var(--seguro-d) var(--seguro-b) var(--seguro-e);
+  background: rgba(16, 12, 22, 0.66);
+  backdrop-filter: blur(4px);
+  overflow-y: auto;
+}
+
+.rg-caixa-sala {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+
+.rg-caixa-sala h2 {
+  margin: 0;
+}
+
+.rg-sala-sub,
+.rg-sala-dica,
+.rg-sala-passo {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.88;
+}
+
+.rg-sala-dica {
+  font-size: 12.5px;
+  opacity: 0.7;
+}
+
+.rg-sala-passo {
+  font-weight: 600;
+  opacity: 1;
+  margin-top: 4px;
+}
+
+.rg-sala-erro {
+  margin: 0;
+  color: #ffb0a0;
+  font-size: 14px;
+}
+
+.rg-sala-acoes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rg-sala-acoes .rg-botao {
+  flex: 1 1 auto;
+}
+
+.rg-botao.perigo {
+  color: #ffb0a0;
+  border-color: rgba(255, 140, 120, 0.35);
+}
+
+.rg-sala-qr {
+  align-self: center;
+  width: min(300px, 76vw);
+  padding: 6px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.rg-sala-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.rg-sala-endereco {
+  align-self: center;
+  font-size: 15px;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.rg-sala-codigo {
+  width: 100%;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1px solid var(--borda-rg);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--marfim);
+  font:
+    12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  padding: 8px;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+}
+
+.rg-sala-espera {
+  margin: 0;
+  font-size: 14px;
+  animation: rg-pulso 0.8s infinite alternate;
+}
+
+.rg-sala-camera {
+  width: 100%;
+  border-radius: 12px;
+  background: #000;
+}
+
+.rg-sala-lista {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.rg-sala-membro {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border-left: 4px solid var(--cor);
+  font-size: 14px;
+}
+
+.rg-sala-membro.vazio {
+  opacity: 0.45;
+  border-left-style: dashed;
+}
+
+.rg-sala-etiqueta {
+  font-weight: 700;
+  color: var(--cor);
+}
+
+.rg-caixa-espera {
+  width: min(420px, 100%);
+}
+
+.rg-etiquetas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rg-etiqueta {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #1b1424;
+  background: var(--cor);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.rg-etiqueta.caido {
+  background: #ff8a8a;
+  animation: rg-pulso 0.5s infinite alternate;
+}
+
+.rg-equipe {
+  position: absolute;
+  top: calc(44px + var(--seguro-c));
+  left: var(--seguro-e);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rg-equipe-linha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--cor);
+  text-shadow: 0 1px 2px #000;
+}
+
+.rg-equipe-nome {
+  min-width: 74px;
+}
+
+.rg-equipe-vida {
+  width: 90px;
+  height: 7px;
+  border-radius: 99px;
+  background: rgba(20, 16, 28, 0.75);
+  overflow: hidden;
+}
+
+.rg-equipe-preench {
+  height: 100%;
+  background: var(--cor);
+}
+
+.rg-equipe-linha.caido {
+  color: #ff8a8a;
+}
+
+@media (max-width: 720px) {
+  .rg-sala-lista {
+    grid-template-columns: 1fr;
+  }
+}

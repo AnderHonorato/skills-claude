@@ -42,6 +42,21 @@ As habilidades disparam sozinhas, cada uma com recarga e velocidade próprias.
   próprios; sem voz disponível, usa bipes com entonação). Inimigos resmungam com vozes sintetizadas.
 - Recorde de tempo salvo por personagem no navegador.
 
+### Jogar junto (mesmo Wi-Fi)
+
+Até 4 pessoas, cada uma no seu celular ou PC. No menu, toque em **Jogar junto (mesmo Wi-Fi)**.
+
+- **Pelo link do jogo (sem instalar nada):** quem cria a sala toca em **Criar sala → Convidar alguém**
+  e manda o código (ou mostra o QR) para o amigo. O amigo toca em **Entrar numa sala**, cola o código
+  e devolve o código de resposta, que o anfitrião cola. A conexão é direta entre os aparelhos (WebRTC).
+- **Com um computador no Wi-Fi (sem códigos):** `pnpm install && pnpm compilar && pnpm lan`. Todos abrem
+  o endereço que aparecer (ex.: `http://192.168.0.12:8080`); uma pessoa toca em **Criar sala** e as
+  outras em **Entrar**.
+
+Na partida em grupo cada um tem personagem, build e cartas próprias; a experiência é do time. Quem
+cai pode ser levantado por um colega que fique perto por 3 segundos; a partida acaba quando todos
+caem. A pausa em grupo é só sua (o jogo continua para os outros e você fica protegido).
+
 ### Aventura clássica
 
 | Ação                        | Teclado/mouse                    | Celular                                       |
@@ -64,6 +79,7 @@ pnpm install
 pnpm iniciar          # servidor local em http://127.0.0.1:5173
 pnpm tipos            # checagem de tipos
 pnpm testar           # testes do núcleo e da progressão do roguelike
+node ferramentas/testar-multijogador.mjs   # dois aparelhos simulados jogando juntos
 node testes/e2e/rota.mjs   # joga a história inteira automaticamente (precisa do servidor)
 pnpm compilar && node ferramentas/gerar-artefato.mjs   # arquivo único + versão para publicar
 ```
