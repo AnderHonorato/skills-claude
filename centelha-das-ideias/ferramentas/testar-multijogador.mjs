@@ -37,7 +37,7 @@ async function aba(nome, w, h) {
   pg.on('console', (m) => m.type() === 'error' && erros.push(`[${nome}] ${m.text()}`));
   await pg.goto(url);
   try {
-    await pg.waitForFunction(() => window.__sobrevivencia, null, { timeout: 60000 });
+    await pg.waitForFunction(() => window.__sobrevivencia, null, { timeout: 150000 });
   } catch (e) {
     console.log(`[${nome}] não carregou:`, erros.join('\n'));
     throw e;

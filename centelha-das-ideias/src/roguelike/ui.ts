@@ -529,6 +529,13 @@ export class InterfaceSobrevivencia {
     });
     vozes.append(el('span', undefined, 'Vozes dos personagens'), cb);
     caixa.append(vozes);
+    const leve = el('label', 'rg-controle');
+    const cbLeve = el('input');
+    cbLeve.type = 'checkbox';
+    cbLeve.checked = p.modoLeve;
+    cbLeve.addEventListener('change', () => p.definirModoLeve(cbLeve.checked));
+    leve.append(el('span', undefined, 'Modo leve (sem brilho, para celular fraco)'), cbLeve);
+    caixa.append(leve);
     caixa.append(this.listaBuild());
     const s = this.sala.sessao;
     const menu = el(

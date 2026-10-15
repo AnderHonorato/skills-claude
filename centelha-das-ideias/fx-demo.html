@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <title>Centelha — Vitrine de Efeitos</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: linear-gradient(180deg, #bfe3ff 0%, #f3e3cf 60%, #f3e3cf 100%);
+        font-family: system-ui, sans-serif;
+      }
+      canvas {
+        display: block;
+      }
+      #rotulo {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 8px 18px;
+        border-radius: 12px;
+        background: rgba(28, 22, 36, 0.78);
+        color: #fff6e4;
+        text-align: center;
+        pointer-events: none;
+      }
+      #rotulo b {
+        display: block;
+        font-size: 20px;
+      }
+      #rotulo span {
+        font-size: 13px;
+        opacity: 0.85;
+      }
+      #info {
+        position: fixed;
+        bottom: 8px;
+        left: 8px;
+        color: rgba(28, 22, 36, 0.8);
+        font: 12px monospace;
+      }
+      .marca {
+        position: fixed;
+        transform: translate(-50%, 0);
+        padding: 1px 7px;
+        border-radius: 8px;
+        background: rgba(28, 22, 36, 0.6);
+        color: #fff;
+        font-size: 12px;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="tela"></canvas>
+    <div id="rotulo"><b>Efeitos</b><span></span></div>
+    <div id="marcas"></div>
+    <div id="info"></div>
+    <script type="module" src="/src/roguelike/fx/demo.ts"></script>
+  </body>
+</html>

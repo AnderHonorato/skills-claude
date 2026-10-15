@@ -47,6 +47,7 @@ import {
 import { criarArena, RAIO_ARENA, type Arena } from '../render/arena';
 import { geometriaInimigo, geometriaProjetil, OLHOS, type FormaProjetil } from '../render/formas';
 import { Halos, Lote } from '../render/instancias';
+import { SistemaFx, type PosProcesso } from '../fx/indice';
 import type { Mensagem } from '../rede/canal';
 import { Vozes } from '../voz';
 import { Jogador, MAX_JOGADORES, type HabAtiva } from './jogador';
@@ -78,6 +79,7 @@ const TIPOS_ATAQUE: TipoAtaque[] = [
 
 /** Poça deixada pelo Vazamento de Memória (deixa os jogadores lentos). */
 interface PocaInimiga {
+  id: number;
   x: number;
   z: number;
   raio: number;
@@ -121,6 +123,8 @@ interface Inimigo {
 }
 
 interface Projetil {
+  /** Identifica o rastro visual. */
+  id: number;
   hab: number;
   inimigo: boolean;
   x: number;
@@ -151,6 +155,7 @@ interface Projetil {
 }
 
 interface Zona {
+  id: number;
   tipo: 'tornado' | 'buraco' | 'poca' | 'fogo' | 'muro';
   /** Firewall evoluído: acompanha o dono. */
   segue?: boolean;
@@ -251,6 +256,9 @@ export class Partida {
   readonly poeira = new SistemaParticulas(1400, false);
   readonly brilhos = new SistemaParticulas(2600, true);
   readonly halos = new Halos(3200);
+  /** Efeitos visuais (partículas, rastros, raios, ondas) e brilho pós-processado. */
+  readonly fx: SistemaFx;
+  private pos: PosProcesso;
   private sol: THREE.DirectionalLight;
   private hemi: THREE.HemisphereLight;
   qualidade: 'alta' | 'media' | 'baixa';
@@ -486,6 +494,18 @@ export class Partida {
   private noite = 0;
   private anelMagnetico: THREE.Mesh;
   private aurasJogador = new Map<Jogador, THREE.Mesh>();
+  private ctxCeu = (() => {
+    const c = document.createElement('canvas');
+    c.width = 2;
+    c.height = 256;
+    return c.getContext('2d')!;
+  })();
+  private texCeu = (() => {
+    const t = new THREE.CanvasTexture(this.ctxCeu.canvas);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  private chaveCeu = -1;
   private pocasInimigas: PocaInimiga[] = [];
   private geoPoca = new THREE.CircleGeometry(1, 28);
   private matPoca = new THREE.MeshBasicMaterial({
@@ -517,6 +537,7 @@ export class Partida {
     this.renderizador.shadowMap.type = THREE.PCFSoftShadowMap;
     this.camera = new THREE.PerspectiveCamera(46, 1, 0.5, 220);
     this.cena.fog = new THREE.Fog('#f3e3cf', 30, 70);
+    this.cena.background = this.texCeu;
     this.hemi = new THREE.HemisphereLight('#dff1ff', '#8a7a62', 1.7);
     this.sol = new THREE.DirectionalLight('#fff0d6', 2.3);
     this.sol.castShadow = this.qualidade !== 'baixa';
@@ -538,6 +559,13 @@ export class Partida {
     this.vozes = new Vozes(this.audio);
     this.arena = criarArena(this.qualidade);
     this.cena.add(this.arena.grupo, this.poeira.pontos, this.brilhos.pontos, this.halos.pontos);
+    this.fx = new SistemaFx(this.cena, this.qualidade);
+    this.pos = this.fx.criarPosProcesso(this.renderizador);
+    try {
+      if (localStorage.getItem('centelha-sobrevivencia:leve') === '1') this.definirModoLeve(true);
+    } catch {
+      /* sem armazenamento */
+    }
 
     const matInimigo = new THREE.MeshToonMaterial({
       color: '#ffffff',
@@ -642,6 +670,19 @@ export class Partida {
 
   // ------------------------------------------------------------------ utilidades
 
+  /** Modo leve: desliga o brilho pós-processado (celulares mais fracos). */
+  modoLeve = false;
+
+  definirModoLeve(leve: boolean): void {
+    this.modoLeve = leve;
+    this.pos.definirQualidade(leve ? 'baixa' : this.qualidade);
+    try {
+      localStorage.setItem('centelha-sobrevivencia:leve', leve ? '1' : '0');
+    } catch {
+      /* sem armazenamento */
+    }
+  }
+
   redimensionar(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -658,6 +699,7 @@ export class Partida {
     this.poeira.definirEscala(h * dpr);
     this.brilhos.definirEscala(h * dpr);
     this.halos.definirEscala(h * dpr);
+    this.pos?.redimensionar(w, h, dpr);
   }
 
   paraTela(x: number, y: number, z: number): { x: number; y: number; visivel: boolean } {
@@ -947,13 +989,7 @@ export class Partida {
     this.j = this.local;
     this.rede?.nivelAberto();
     this.audio.tocar('comemoracao');
-    this.brilhos.explosao(this.x, 1, this.z, 40, {
-      cor: '#ffd27a',
-      tamanho: 0.3,
-      vida: 1,
-      velocidade: 6,
-      gravidade: -2,
-    });
+    for (const jg of this.jogadores) if (!jg.caido) this.fx.subirNivel(jg.x, jg.z);
     this.sentir('feliz', 2);
     this.falar('nivel');
     this.aoMudar();
@@ -1003,14 +1039,7 @@ export class Partida {
             true
           );
         this.sentir('determinado', 3);
-        this.ondaVisual(this.x, this.z, def.cor, 9, 0.8);
-        this.brilhos.explosao(this.x, 1, this.z, 90, {
-          cor: def.cor,
-          tamanho: 0.35,
-          vida: 1.4,
-          velocidade: 9,
-          gravidade: -1,
-        });
+        this.fx.evolucao(this.x, this.z, def.cor);
         this.tremer(0.4);
         this.audio.tocar('restauracao');
       } else this.audio.tocar('uiConfirmar');
@@ -1502,6 +1531,7 @@ export class Partida {
       );
     else
       this.mostrarBanner('O GRANDE RUÍDO CHEGOU', 'Derrote-o para um baú de ideias', '#c58bff', 4);
+    if (this.chefeAtual) this.fx.chuvaCodigo(this.chefeAtual.x, this.chefeAtual.z, 4, 2);
     this.audio.musica('chefe');
     this.audio.tocar('chefeRugido');
     this.vozes.falar(
@@ -1599,12 +1629,7 @@ export class Partida {
     i.vivo = false;
     if (!this.autoridade) {
       // convidado: só o efeito; o anfitrião decide cristais, itens e contagem
-      this.brilhos.explosao(i.x, 0.6, i.z, i.def.comportamento === 'chefe' ? 120 : 10, {
-        cor: i.def.cor,
-        tamanho: 0.28,
-        vida: 0.6,
-        velocidade: i.def.comportamento === 'chefe' ? 12 : 5,
-      });
+      this.efeitoMorte(i);
       this.som('inimigoDerrotado', { x: i.x, y: i.z, volume: 0.5 }, 0.07);
       return;
     }
@@ -1619,13 +1644,7 @@ export class Partida {
         );
         if (b) b.vy = 5;
       }
-    const cor = i.def.cor;
-    this.brilhos.explosao(i.x, 0.6, i.z, i.def.comportamento === 'chefe' ? 120 : 10, {
-      cor,
-      tamanho: 0.28,
-      vida: 0.6,
-      velocidade: i.def.comportamento === 'chefe' ? 12 : 5,
-    });
+    this.efeitoMorte(i);
     if (i.def.id !== 'spam' || this.rnd() < 0.4)
       this.poeira.explosao(i.x, 0.5, i.z, 4, {
         cor: '#5a4a7a',
@@ -1754,6 +1773,7 @@ export class Partida {
     jg.modelo.impulso(-2);
     if (!jg.local) return;
     this.tremer(0.25);
+    this.fx.pulso('#ff3b3b', 0.45);
     this.som('danoRecebido', {}, 0.1);
   }
 
@@ -1906,9 +1926,15 @@ export class Partida {
           0,
           cor
         );
-        this.halos.por(ox, 0.8, oz, escala * 2.4, h.def.cor2, 1.1);
-        if (this.rnd() < 0.3)
-          this.brilhos.emitir({ x: ox, y: 0.8, z: oz, vida: 0.3, tamanho: 0.15, cor: h.def.cor });
+        this.fx.projetilRastro(
+          `o${h.idx}:${a.r.toFixed(2)}:${k}`,
+          h.def.elemento,
+          ox,
+          0.8,
+          oz,
+          forma === 'serra' ? 1.2 : 0.8,
+          forma !== 'serra'
+        );
         for (const i of this.vizinhos(ox, oz, raioAcerto, this.tmpLista)) {
           if (i.hits[h.idx] > this.tempo) continue;
           i.hits[h.idx] = this.tempo + 0.45;
@@ -1924,6 +1950,7 @@ export class Partida {
             dz / d,
             h.def.id === 'escudoCristal' ? 9 : 3
           );
+          this.fx.impacto(h.def.elemento, i.x, 0.8, i.z, 0.6);
         }
         // escudo bloqueia tiros inimigos
         if (h.def.id === 'escudoCristal') {
@@ -1958,12 +1985,7 @@ export class Partida {
   }
 
   private auraHab(h: HabAtiva, v: ReturnType<typeof valoresHabilidade>, dt: number): void {
-    const aura = this.auraDe(this.j);
-    const mat = aura.material as THREE.MeshBasicMaterial;
-    aura.position.set(this.x, 0.06, this.z);
-    aura.scale.setScalar(v.area);
-    mat.opacity = 0.35 + Math.sin(this.tempo * 4) * 0.12;
-    mat.color.set(h.def.cor);
+    this.fx.aura(this.x, this.z, v.area, h.def.cor, h.def.cor2, `aura${this.j.indice}`);
     if (this.rnd() < dt * 20) {
       const a = this.rnd() * Math.PI * 2;
       const r = this.rnd() * v.area;
@@ -2002,13 +2024,13 @@ export class Partida {
       const cx = Math.cos(ang);
       const cz = Math.sin(ang);
       const cor = cores[k % cores.length];
-      // visual: cadeia de halos ao longo do feixe
-      const passos = Math.ceil(v.area / 0.5);
-      for (let p = 1; p <= passos; p++) {
-        const d = (p / passos) * v.area;
-        this.halos.por(this.x + cx * d, 0.9, this.z + cz * d, largura * 2.2, cor, 1.4);
-      }
-      this.halos.por(this.x + cx * v.area, 0.9, this.z + cz * v.area, largura * 4, '#ffffff', 1.6);
+      this.fx.laser(
+        `l${h.idx}:${k}`,
+        { x: this.x, y: 0.9, z: this.z },
+        { x: this.x + cx * v.area, y: 0.9, z: this.z + cz * v.area },
+        largura * 0.6,
+        cor
+      );
       if (this.rnd() < dt * 30)
         this.brilhos.emitir({
           x: this.x + cx * v.area,
@@ -2059,7 +2081,7 @@ export class Partida {
         0,
         cor
       );
-      this.halos.por(ox, oy, oz, estrelas ? 1.6 : 1.2, h.def.cor2, 1.2);
+      this.fx.orbe(h.def.elemento, ox, oy, oz, estrelas ? 0.7 : 0.55);
       if (h.timer > 0) continue;
       const alvo = this.maisProximo(ox, oz, v.alcance);
       if (!alvo && !(estrelas && v.evo10)) continue;
@@ -2086,6 +2108,7 @@ export class Partida {
           perfura: v.evo10 ? 99 : v.perfura,
         });
       }
+      this.fx.disparo(h.def.elemento, ox, oy, oz, Math.cos(h.fase), Math.sin(h.fase), 0.6);
       this.som('ataqueCajado', { volume: 0.25, tom: estrelas ? 1.6 : 1.9 }, 0.08);
     }
     if (h.timer <= 0) h.timer = v.recarga;
@@ -2102,6 +2125,7 @@ export class Partida {
     o: Partial<Projetil> = {}
   ): Projetil {
     const p: Projetil = {
+      id: this.proximoId++,
       hab: h.idx,
       inimigo: false,
       x,
@@ -2303,8 +2327,18 @@ export class Partida {
     );
     malha.rotation.x = -Math.PI / 2;
     malha.position.set(this.x, 0.15, this.z);
+    malha.visible = false;
     this.cena.add(malha);
     const max = v.area * (h.def.id === 'ondaProfunda' && v.evo10 ? 1.5 : 1);
+    this.fx.nova(
+      this.x,
+      this.z,
+      max,
+      h.def.elemento,
+      Math.max(0.3, max / Math.max(1, v.velocidade)),
+      cone?.ang ?? 0,
+      cone?.abertura ?? 10
+    );
     this.ondas.push({
       hab: h.idx,
       x: this.x,
@@ -2392,7 +2426,7 @@ export class Partida {
           this.aviso(p.x, p.z, raio, v.duracao, h.def.cor, () =>
             this.impacto(h, v, p.x, p.z, raio)
           );
-          if (id === 'chuvaMeteoros') this.meteoroVisual(p.x, p.z, v.duracao, escala, h.def.cor);
+          if (id === 'chuvaMeteoros') this.fx.meteoro(p.x, p.z, v.duracao, raio, escala);
         },
         id === 'espinhosTerra' && v.evo5 ? (k % 5) * 70 : k * 60
       );
@@ -2423,36 +2457,15 @@ export class Partida {
       if (id === 'relampagoCeleste' && v.evo5) i.atordoado = Math.max(i.atordoado, 0.8);
     }
     if (id === 'chuvaMeteoros') {
-      this.brilhos.explosao(x, 0.4, z, 26, {
-        cor: '#ff7a3d',
-        tamanho: 0.4,
-        vida: 0.7,
-        velocidade: 7,
-        gravidade: 4,
-      });
-      this.poeira.explosao(x, 0.3, z, 12, {
-        cor: '#6b4a3a',
-        tamanho: 0.6,
-        crescer: 2,
-        vida: 0.9,
-        velocidade: 4,
-      });
-      this.ondaVisual(x, z, '#ffb347', raio * 1.2, 0.35);
       this.tremer(0.18);
       this.som('paredeQuebrada', { x, y: z, volume: 0.6 }, 0.08);
       if (v.evo5) this.criarZona(h, 'fogo', x, z, raio * 0.8, 2.5, v.dano * 0.2);
     } else if (id === 'espinhosTerra') {
       this.espinhosVisual(x, z, raio, h.def.cor);
+      this.fx.erupcaoTerra(x, z, raio);
       this.som('espinhoCortado', { x, y: z, volume: 0.4 }, 0.06);
     } else if (id === 'relampagoCeleste') {
-      this.raioVisual(x, 14, z, x, 0, z, h.def.cor, 0.22);
-      this.ondaVisual(x, z, '#ffffff', raio * 1.3, 0.25);
-      this.brilhos.explosao(x, 0.3, z, 14, {
-        cor: '#9fd8ff',
-        tamanho: 0.25,
-        vida: 0.4,
-        velocidade: 6,
-      });
+      this.fx.relampago(x, z, '#9fd8ff', raio / 1.6);
       this.som('energizar', { x, y: z, volume: 0.6, tom: 0.8 }, 0.06);
       if (v.evo10 && this.rnd() < 0.6) {
         const prox = this.maisProximo(x, z, 6);
@@ -2608,7 +2621,9 @@ export class Partida {
     malha.position.x = x;
     malha.position.z = z;
     this.cena.add(malha);
+    if (tipo !== 'fogo') malha.visible = false;
     const zona: Zona = {
+      id: this.proximoId++,
       tipo,
       hab: h.idx,
       x,
@@ -2718,48 +2733,9 @@ export class Partida {
     y2: number,
     z2: number,
     cor: string,
-    duracao = 0.18
+    largura = 0.55
   ): void {
-    const pts: THREE.Vector3[] = [];
-    const n = 8;
-    for (let k = 0; k <= n; k++) {
-      const t = k / n;
-      const j = k === 0 || k === n ? 0 : 0.35;
-      pts.push(
-        new THREE.Vector3(
-          x1 + (x2 - x1) * t + (this.rnd() - 0.5) * j,
-          y1 + (y2 - y1) * t + (this.rnd() - 0.5) * j,
-          z1 + (z2 - z1) * t + (this.rnd() - 0.5) * j
-        )
-      );
-    }
-    const g = new THREE.Group();
-    const linha = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 1 })
-    );
-    const tubo = new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.07, 4),
-      new THREE.MeshBasicMaterial({
-        color: cor,
-        transparent: true,
-        opacity: 0.9,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-    );
-    g.add(linha, tubo);
-    this.cena.add(g);
-    this.efeitos.push({
-      malha: g,
-      vida: duracao,
-      total: duracao,
-      atualizar: (t) => {
-        (tubo.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - t);
-        (linha.material as THREE.LineBasicMaterial).opacity = 1 - t;
-      },
-    });
-    this.halos.por(x2, y2, z2, 2.2, cor, 1.5);
+    this.fx.raio(x1, y1, z1, x2, y2, z2, cor, largura);
   }
 
   private cortarVisual(
@@ -2770,79 +2746,7 @@ export class Partida {
     cor: string,
     cor2: string
   ): void {
-    const geo = new THREE.RingGeometry(
-      comp * 0.45,
-      comp * 0.55,
-      32,
-      1,
-      -Math.PI / 2.6,
-      Math.PI / 1.3
-    );
-    const m = new THREE.Mesh(
-      geo,
-      new THREE.MeshBasicMaterial({
-        color: cor,
-        transparent: true,
-        opacity: 0.95,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      })
-    );
-    m.rotation.x = -Math.PI / 2;
-    m.rotation.z = -ang;
-    m.position.set(x + Math.cos(ang) * comp * 0.3, 0.9, z + Math.sin(ang) * comp * 0.3);
-    this.cena.add(m);
-    this.efeitos.push({
-      malha: m,
-      vida: 0.22,
-      total: 0.22,
-      atualizar: (t) => {
-        m.scale.setScalar(0.7 + t * 0.6);
-        (m.material as THREE.MeshBasicMaterial).opacity = 0.95 * (1 - t);
-      },
-    });
-    for (let k = 0; k < 8; k++) {
-      const d = this.rnd() * comp;
-      this.brilhos.emitir({
-        x: x + Math.cos(ang) * d,
-        y: 0.9,
-        z: z + Math.sin(ang) * d,
-        vida: 0.3,
-        tamanho: 0.18,
-        cor: cor2,
-      });
-    }
-  }
-
-  private meteoroVisual(x: number, z: number, duracao: number, escala: number, cor: string): void {
-    const m = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(0.6 * escala, 0),
-      new THREE.MeshBasicMaterial({ color: cor })
-    );
-    this.cena.add(m);
-    const ox = x - 4;
-    const oz = z - 6;
-    this.efeitos.push({
-      malha: m,
-      vida: duracao,
-      total: duracao,
-      atualizar: (t) => {
-        m.position.set(ox + (x - ox) * t, 16 * (1 - t), oz + (z - oz) * t);
-        m.rotation.set(t * 8, t * 6, 0);
-        this.halos.por(m.position.x, m.position.y, m.position.z, 3 * escala, '#ffb347', 1.4);
-        if (this.rnd() < 0.8)
-          this.brilhos.emitir({
-            x: m.position.x,
-            y: m.position.y,
-            z: m.position.z,
-            vida: 0.5,
-            tamanho: 0.5 * escala,
-            crescer: 0.3,
-            cor: '#ff7a3d',
-          });
-      },
-    });
+    this.fx.corte(x, z, ang, comp, cor, cor2);
   }
 
   private espinhosVisual(x: number, z: number, raio: number, cor: string): void {
@@ -2877,13 +2781,8 @@ export class Partida {
 
   /** Ransomware: trava uma habilidade de cada jogador perto por alguns segundos. */
   private criptografar(i: Inimigo): void {
-    this.ondaVisual(i.x, i.z, '#39ff88', 9, 0.6);
-    this.brilhos.explosao(i.x, 2, i.z, 60, {
-      cor: '#39ff88',
-      tamanho: 0.3,
-      vida: 0.8,
-      velocidade: 9,
-    });
+    this.fx.nova(i.x, i.z, 9, 'codigo', 0.6);
+    this.fx.chuvaCodigo(i.x, i.z, 4, 1.6);
     this.som('runaErro', {}, 0);
     this.tremer(0.5);
     if (!this.autoridade) return;
@@ -2893,7 +2792,7 @@ export class Partida {
       if (!livres.length) continue;
       const h = livres[Math.floor(this.rnd() * livres.length)];
       jg.bloqueios.set(h.idx, this.tempo + 8);
-      this.brilhos.explosao(jg.x, 1.4, jg.z, 30, { cor: '#39ff88', tamanho: 0.25, vida: 0.6 });
+      this.fx.criptografar(jg.x, 1.6, jg.z);
       if (jg.local)
         this.mostrarBanner(
           'ARQUIVO CRIPTOGRAFADO!',
@@ -2953,7 +2852,7 @@ export class Partida {
         arrasto: 0,
       });
     }
-    this.ondaVisual(this.x, this.z, h.def.cor, v.area, 0.35);
+    this.fx.coletorLixo(this.x, this.z, v.area);
     if (apagados > 0) {
       this.brilhos.explosao(this.x, 1.2, this.z, 10 + apagados * 3, {
         cor: '#c8ffd9',
@@ -2975,7 +2874,10 @@ export class Partida {
     }
     const dono = this.j;
     for (const a of alvos) {
+      const idFx = this.proximoId++;
+      this.fx.agendar(0.6, (t) => this.fx.breakpoint(a.x, a.z, v.area, t, idFx));
       this.aviso(a.x, a.z, v.area, 0.6, h.def.cor, () => {
+        this.fx.breakpointAtivar(a.x, a.z, v.area);
         const antes = this.j;
         this.j = dono;
         for (const i of this.vizinhos(a.x, a.z, v.area, this.tmpLista).slice()) {
@@ -3023,6 +2925,17 @@ export class Partida {
     return n;
   }
 
+  /** Inimigo apagado: voxels e 0/1 subindo; chefes explodem com chuva de código. */
+  private efeitoMorte(i: Inimigo): void {
+    const tam = Math.max(0.6, i.raio / 0.45);
+    if (i.def.comportamento === 'chefe') {
+      this.fx.explosao(i.def.id === 'ransomware' ? 'codigo' : 'arcano', i.x, i.z, 6);
+      this.fx.chuvaCodigo(i.x, i.z, 5, 2);
+      this.fx.pulso('#ffffff', 0.8);
+    } else
+      this.fx.morteDigital(i.x, 0.3 + i.def.altura * 0.4 * tam, i.z, i.def.cor, Math.min(2.4, tam));
+  }
+
   /** Cavalo de Troia: o "presente" abre e solta vírus. */
   private abrirTrojan(i: Inimigo): void {
     i.vivo = false;
@@ -3031,20 +2944,8 @@ export class Partida {
       const a = (k / 6) * Math.PI * 2;
       this.criarInimigo(INIMIGOS.virus, i.x + Math.cos(a) * 1.3, i.z + Math.sin(a) * 1.3);
     }
-    this.brilhos.explosao(i.x, 0.8, i.z, 50, {
-      cor: '#ffd27a',
-      tamanho: 0.3,
-      vida: 0.8,
-      velocidade: 7,
-      gravidade: 4,
-    });
-    this.brilhos.explosao(i.x, 0.8, i.z, 30, {
-      cor: '#39ff88',
-      tamanho: 0.25,
-      vida: 0.7,
-      velocidade: 5,
-    });
-    this.ondaVisual(i.x, i.z, '#39ff88', 4, 0.5);
+    this.fx.explosao('codigo', i.x, i.z, 2.5);
+    this.fx.chuvaCodigo(i.x, i.z, 2.2, 1.2);
     this.audio.tocar('bauAbrir');
     this.som('inimigoAlerta', {}, 0.5);
     this.mostrarBanner('ERA UM CAVALO DE TROIA!', 'Vírus à solta', '#39ff88', 2);
@@ -3054,18 +2955,13 @@ export class Partida {
   private saltoPonteiro(i: Inimigo): void {
     const a = i.ataque!;
     i.ataque = undefined;
-    this.brilhos.explosao(i.x, 0.8, i.z, 14, { cor: '#ff5c5c', tamanho: 0.25, vida: 0.4 });
+    this.fx.glitch(i.x, 0.8, i.z, 1.1);
     if (this.autoridade) {
       i.x = a.ax;
       i.z = a.az;
     }
-    this.brilhos.explosao(a.ax, 0.8, a.az, 26, {
-      cor: '#ff5c5c',
-      tamanho: 0.3,
-      vida: 0.5,
-      velocidade: 6,
-    });
-    this.ondaVisual(a.ax, a.az, '#ff5c5c', 1.9, 0.35);
+    this.fx.glitch(a.ax, 0.8, a.az, 1.4);
+    this.fx.impacto('codigo', a.ax, 0.4, a.az, 1.2);
     this.som('runaErro', { x: a.ax, y: a.az, volume: 0.5 }, 0.1);
     const antes = this.j;
     for (const jg of this.jogadores) {
@@ -3085,8 +2981,9 @@ export class Partida {
     malha.rotation.x = -Math.PI / 2;
     malha.position.set(x, 0.04, z);
     malha.scale.setScalar(raio);
+    malha.visible = false;
     this.cena.add(malha);
-    this.pocasInimigas.push({ x, z, raio, vida: 7, malha });
+    this.pocasInimigas.push({ id: this.proximoId++, x, z, raio, vida: 7, malha });
   }
 
   private atualizarPocasInimigas(dt: number): void {
@@ -3095,7 +2992,8 @@ export class Partida {
       const m = p.malha.material as THREE.MeshBasicMaterial;
       m.opacity = Math.min(0.55, p.vida * 0.3) * (0.85 + Math.sin(this.tempo * 3 + p.x) * 0.15);
       if (p.vida <= 0) this.cena.remove(p.malha);
-      else if (this.rnd() < dt * 2)
+      else if (p.vida > 0.3) this.fx.vazamento(p.id, p.x, p.z, p.raio);
+      if (p.vida > 0 && this.rnd() < dt * 2)
         this.poeira.emitir({
           x: p.x + (this.rnd() - 0.5) * p.raio,
           y: 0.1,
@@ -3222,6 +3120,7 @@ export class Partida {
         if (i.recarga <= 0 && d < 15 && !parado) {
           i.recarga = 2.6;
           this.projeteis.push({
+            id: this.proximoId++,
             hab: -1,
             inimigo: true,
             x: i.x,
@@ -3249,11 +3148,11 @@ export class Partida {
         i.recarga -= dt;
         if (i.recarga <= 0 && d > 7 && !parado) {
           i.recarga = 4 + this.rnd() * 2;
-          this.brilhos.explosao(i.x, 0.6, i.z, 12, { cor: '#5cffd0', tamanho: 0.25, vida: 0.4 });
+          this.fx.glitch(i.x, 0.6, i.z, 1);
           const a = this.rnd() * Math.PI * 2;
           i.x = this.x + Math.cos(a) * 5;
           i.z = this.z + Math.sin(a) * 5;
-          this.brilhos.explosao(i.x, 0.6, i.z, 12, { cor: '#5cffd0', tamanho: 0.25, vida: 0.4 });
+          this.fx.glitch(i.x, 0.6, i.z, 1);
           this.som('runaErro', { x: i.x, y: i.z, volume: 0.3 }, 0.2);
         }
       } else if (c === 'chefe') this.ataqueChefe(i, dt, d, dx, dz);
@@ -3270,12 +3169,7 @@ export class Partida {
               copia.vida = i.vida;
               copia.recarga = 6 + this.rnd() * 3;
             }
-            this.brilhos.explosao(i.x, 0.6, i.z, 12, {
-              cor: '#39ff88',
-              tamanho: 0.2,
-              vida: 0.45,
-              velocidade: 3,
-            });
+            this.fx.glitch(i.x, 0.6, i.z, 0.7);
             this.som('runaErro', { x: i.x, y: i.z, volume: 0.25, tom: 1.6 }, 0.3);
           }
         }
@@ -3513,10 +3407,7 @@ export class Partida {
       if (p.inimigo) {
         p.x += p.vx * dt;
         p.z += p.vz * dt;
-        this.lotesProj
-          .get('orbe')!
-          .por(p.x, p.y, p.z, p.escala, p.escala, p.escala, 0, 0, 0, p.cor);
-        this.halos.por(p.x, p.y, p.z, 1.6, '#ff5cc8', 1.2);
+        this.fx.projetilRastro(p.id, 'arcano', p.x, p.y, p.z, 0.7);
         for (const jg of this.jogadores) {
           if (jg.caido || (p.x - jg.x) ** 2 + (p.z - jg.z) ** 2 >= (p.raio + 0.4) ** 2) continue;
           this.j = jg;
@@ -3596,24 +3487,24 @@ export class Partida {
         p.z += p.vz * dt;
       }
       p.rot = Math.atan2(p.vx, p.vz);
-      // desenho
+      // desenho: a forma (lança, lâmina, serra…) + rastro e brilho do elemento
       const lote = this.lotesProj.get(p.forma)!;
       const s = p.escala;
+      const corpo = p.forma !== 'orbe' && p.forma !== 'gota';
       if (p.forma === 'lanca') lote.por(p.x, p.y, p.z, s, s, s, 0, p.rot, 0, p.cor);
       else if (p.forma === 'lamina' || p.forma === 'disco' || p.forma === 'serra')
         lote.por(p.x, p.y, p.z, s, s, s, 0, p.giro * 14, 0, p.cor);
-      else lote.por(p.x, p.y, p.z, s, s, s, p.giro * 5, p.giro * 7, 0, p.cor);
+      else if (corpo) lote.por(p.x, p.y, p.z, s, s, s, p.giro * 5, p.giro * 7, 0, p.cor);
       const h = this.habDe(p.hab);
-      this.halos.por(p.x, p.y, p.z, s * 2.6, h?.def.cor2 ?? '#ffffff', 1.2);
-      if (this.rnd() < 0.5)
-        this.brilhos.emitir({
-          x: p.x,
-          y: p.y,
-          z: p.z,
-          vida: 0.3,
-          tamanho: s * 0.35,
-          cor: h?.def.cor ?? '#ffffff',
-        });
+      this.fx.projetilRastro(
+        p.id,
+        p.elemento,
+        p.x,
+        p.y,
+        p.z,
+        Math.min(1.6, Math.max(0.5, s)),
+        !(p.forma === 'lanca' || p.forma === 'lamina' || p.forma === 'disco' || p.forma === 'serra')
+      );
       if (p.arco) continue;
       // colisão
       for (const i of this.vizinhos(p.x, p.z, p.raio, this.tmpLista)) {
@@ -3637,12 +3528,21 @@ export class Partida {
           { congela }
         );
         if (p.explode > 0) this.explodir(p, h);
+        this.fx.impacto(
+          p.elemento,
+          i.x,
+          Math.max(0.5, p.y),
+          i.z,
+          Math.min(1.3, Math.max(0.5, p.escala))
+        );
         if ((p.profundidade ?? 0) > 0) {
+          this.fx.recursao(p.x, p.y, p.z, p.profundidade ?? 1, '#39ff88');
           const ramos = (h?.nivel ?? 0) >= 10 ? 3 : 2;
           for (let k = 0; k < ramos; k++) {
             const a = p.rot + (k - (ramos - 1) / 2) * 0.9;
             this.projeteis.push({
               ...p,
+              id: this.proximoId++,
               vx: Math.sin(a) * vel,
               vz: Math.cos(a) * vel,
               escala: p.escala * 0.8,
@@ -3665,6 +3565,7 @@ export class Partida {
             const a = p.rot + (k ? 0.8 : -0.8);
             this.projeteis.push({
               ...p,
+              id: this.proximoId++,
               x: p.x,
               z: p.z,
               vx: Math.sin(a) * vel,
@@ -3685,6 +3586,7 @@ export class Partida {
           const a = (k / 4) * Math.PI * 2;
           this.projeteis.push({
             ...p,
+            id: this.proximoId++,
             vx: Math.cos(a) * 12,
             vz: Math.sin(a) * 12,
             escala: 0.5,
@@ -3698,6 +3600,7 @@ export class Partida {
       }
       if (p.vida <= 0 && p.explode > 0 && !p.atingidos.size) this.explodir(p, h);
     }
+    for (const p of this.projeteis) if (p.vida <= 0) this.fx.fimRastro(p.id);
     this.projeteis = this.projeteis.filter((p) => p.vida > 0);
   }
 
@@ -3705,13 +3608,7 @@ export class Partida {
     const r = p.explode;
     for (const i of this.vizinhos(p.x, p.z, r, this.tmpLista2))
       this.causarDano(i, p.dano * 0.6, p.hab, 'fogo');
-    this.brilhos.explosao(p.x, p.y, p.z, 22, {
-      cor: '#ff7a3d',
-      tamanho: 0.35,
-      vida: 0.5,
-      velocidade: 6,
-    });
-    this.ondaVisual(p.x, p.z, '#ffb347', r, 0.3);
+    this.fx.explosao('fogo', p.x, p.z, r);
     this.som('ataqueMartelo', { x: p.x, y: p.z, volume: 0.35, tom: 0.7 }, 0.08);
     if (h && h.nivel >= 5) this.criarZona(h, 'fogo', p.x, p.z, r * 0.8, 2, p.dano * 0.15);
   }
@@ -3737,6 +3634,7 @@ export class Partida {
         }
         z.malha.position.set(z.x, 0, z.z);
         z.malha.rotation.y += dt * 9;
+        this.fx.tornado(z.id, z.x, z.z, z.raio);
         z.malha.children.forEach((c, k) => (c.position.x = Math.sin(t * 20 + k) * 0.15));
         for (const i of this.vizinhos(z.x, z.z, z.raio * 1.7, this.tmpLista)) {
           const dx = z.x - i.x;
@@ -3763,6 +3661,7 @@ export class Partida {
           z.malha.position.set(z.x, 0, z.z);
         }
         const fade = Math.min(1, z.vida * 2, t * 6);
+        this.fx.firewall(z.id, z.x, z.z, z.raio, t);
         z.malha.scale.set(
           z.raio * (0.6 + fade * 0.4),
           0.3 + fade * 0.7,
@@ -3807,6 +3706,7 @@ export class Partida {
         continue;
       } else if (z.tipo === 'buraco') {
         z.malha.rotation.y += dt * 4;
+        this.fx.buracoNegro(z.id, z.x, z.z, z.raio);
         z.malha.scale.setScalar(
           (z.raio / 2) * (0.6 + Math.min(1, t * 4) * 0.4) * (1 + Math.sin(this.tempo * 10) * 0.05)
         );
@@ -3837,7 +3737,7 @@ export class Partida {
         if (z.vida <= 0 && z.explode) {
           for (const i of this.vizinhos(z.x, z.z, z.raio * 2.5, this.tmpLista))
             this.causarDano(i, z.explode, z.hab, 'gravidade');
-          this.ondaVisual(z.x, z.z, '#c58bff', z.raio * 3, 0.5);
+          this.fx.explosao('gravidade', z.x, z.z, z.raio * 2.5);
           this.brilhos.explosao(z.x, 1, z.z, 70, {
             cor: '#c58bff',
             tamanho: 0.4,
@@ -3850,6 +3750,7 @@ export class Partida {
       } else {
         const m = (z.malha as THREE.Mesh).material as THREE.MeshBasicMaterial;
         m.opacity = 0.45 * Math.min(1, z.vida * 2) * (0.8 + Math.sin(this.tempo * 6) * 0.2);
+        this.fx.poca(z.id, z.x, z.z, z.raio, z.elemento);
         if (this.rnd() < dt * 10)
           this.poeira.emitir({
             x: z.x + (this.rnd() - 0.5) * z.raio * 1.4,
@@ -3973,13 +3874,7 @@ export class Partida {
       { tom: 1 + tier * 0.15 + this.rnd() * 0.08, volume: 0.25 + tier * 0.1 },
       0.03
     );
-    this.brilhos.explosao(x, 0.8, z, 3 + tier * 5, {
-      cor: CORES_CRISTAL[tier],
-      tamanho: 0.18 + tier * 0.06,
-      vida: 0.45,
-      velocidade: 2 + tier,
-      gravidade: -1,
-    });
+    this.fx.coletaCristal(x, 0.8, z, CORES_CRISTAL[tier]);
   }
 
   private atualizarItens(dt: number): void {
@@ -4244,6 +4139,18 @@ export class Partida {
     const nevoa = new THREE.Color('#f3e3cf').lerp(new THREE.Color('#2e2350'), n);
     (this.cena.fog as THREE.Fog).color.copy(nevoa);
     document.body.style.background = `linear-gradient(180deg, #${ceuA.getHexString()} 0%, #${ceuB.getHexString()} 62%, #${nevoa.getHexString()} 100%)`;
+    // o pós-processamento não preserva a transparência: o céu vira o fundo da cena
+    const chaveCeu = Math.round(n * 64);
+    if (chaveCeu !== this.chaveCeu) {
+      this.chaveCeu = chaveCeu;
+      const g = this.ctxCeu.createLinearGradient(0, 0, 0, 256);
+      g.addColorStop(0, `#${ceuA.getHexString()}`);
+      g.addColorStop(0.62, `#${ceuB.getHexString()}`);
+      g.addColorStop(1, `#${nevoa.getHexString()}`);
+      this.ctxCeu.fillStyle = g;
+      this.ctxCeu.fillRect(0, 0, 2, 256);
+      this.texCeu.needsUpdate = true;
+    }
     this.sol.intensity = 2.3 - n * 1.4;
     this.sol.color.set('#fff0d6').lerp(new THREE.Color('#9fa8ff'), n);
     this.hemi.intensity = 1.7 - n * 0.8;
@@ -4266,6 +4173,7 @@ export class Partida {
       this.alvoCam.z += (this.z + this.vz * 0.15 - this.alvoCam.z) * k;
       const retrato = this.camera.aspect < 1 ? 1 + (1 - this.camera.aspect) * 0.8 : 1;
       this.camera.position.set(this.alvoCam.x, 15 * retrato, this.alvoCam.z + 10.5 * retrato);
+      this.tremor = Math.max(this.tremor, this.fx.tremor());
       if (this.tremor > 0) {
         this.camera.position.x += (Math.random() - 0.5) * this.tremor;
         this.camera.position.y += (Math.random() - 0.5) * this.tremor;
@@ -4278,7 +4186,8 @@ export class Partida {
     this.poeira.atualizar(dt, this.tempo);
     this.brilhos.atualizar(dt, this.tempo);
     this.halos.concluir();
-    this.renderizador.render(this.cena, this.camera);
+    this.fx.atualizar(dt, this.camera);
+    this.pos.render(this.renderizador, this.cena, this.camera);
   }
 
   // ------------------------------------------------------------------ rede (multijogador)
